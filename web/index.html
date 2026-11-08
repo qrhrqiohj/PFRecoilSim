@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RecoilSim</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='8' fill='none' stroke='%23ffb224' stroke-width='2.4'/%3E%3Ccircle cx='12' cy='12' r='2.2' fill='%23ffb224'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- icon set -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-logo" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M12 1.5v5M12 17.5v5M1.5 12h5M17.5 12h5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="12" r="2" fill="currentColor"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L8.5 4.64A1 1 0 0 0 7 5.5z" fill="currentColor"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4 4v4.5h4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-vol" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-erase" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-reload" viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8 9h8M8 13h8M8 17h8" stroke="currentColor" stroke-width="1.4" opacity=".7"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.6 2.3c-.8.4-1.2.9-1.2 1.8v.4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></symbol>
+    <symbol id="i-best" viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></symbol>
+    <symbol id="i-export" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M3.5 9.5h17M3.5 14.8h17M9.5 9.5V20" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8M18.5 18.5l-1.8-1.8M7.3 7.3L5.5 5.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="1.9"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 11v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.6" r="1.2" fill="currentColor"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><rect x="9.5" y="2.5" width="5" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="7.5" y="8.5" width="9" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M10 16v5.5M14 16v5.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.5 4.5v15" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-panelr" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M14.5 4.5v15" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M6 3.5h12a1 1 0 0 1 1 1V21l-7-4.5L5 21V4.5a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+    <symbol id="i-eyeoff" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.6A9.8 9.8 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.9 3.7M6.4 6.9C3.9 8.6 2.5 12 2.5 12S6 18.5 12 18.5c1.6 0 3-.4 4.2-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3" fill="none" stroke="currentColor" stroke-width="1.9"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2.5L4.5 13.5H11l-1 8 8.5-11H12z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></symbol>
+    <symbol id="i-gun" viewBox="0 0 24 24"><path d="M2.5 8.5h17l1.5-1.5h1v4h-3.5l-1 1.5h-5l-1.5 2.5-.5 4H6l1-5.5-4.5-.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<canvas id="gl"></canvas>
+<canvas id="overlay"></canvas>
+
+<!-- ============================ TOP BAR ============================ -->
+<header class="topbar">
+  <div class="brand"><svg class="ic logo"><use href="#i-logo"/></svg><span>RecoilSim</span></div>
+  <button class="weaponchip" id="weaponChip" title="Change gun (G)">
+    <span class="wc-text"><span class="wc-class" id="weaponClass">—</span><span class="wc-name" id="weaponName">Loading…</span></span>
+    <svg class="ic"><use href="#i-chev"/></svg>
+  </button>
+  <span class="spacer"></span>
+  <button class="btn" id="optOpen" title="Find the best attachments for this gun (B)"><svg class="ic"><use href="#i-best"/></svg><span>Best setup</span></button>
+  <button class="btn" id="exportOpen" title="Export tables for Google Sheets / Excel"><svg class="ic"><use href="#i-export"/></svg><span>Export</span></button>
+  <span class="tb-sep"></span>
+  <button class="iconbtn" id="prefsOpen" title="Display &amp; sound settings"><svg class="ic"><use href="#i-gear"/></svg></button>
+  <button class="iconbtn" id="helpOpen" title="Controls &amp; shortcuts (?)"><svg class="ic"><use href="#i-help"/></svg></button>
+</header>
+
+<!-- ============================ LEFT: SETUP ============================ -->
+<aside class="panel left" id="leftPanel">
+  <div class="tabs"><span class="ptitle">Setup</span><span class="spacer"></span><button class="panel-hide inline" data-collapse="leftPanel" title="Hide panel ([)"><svg class="ic"><use href="#i-panel"/></svg></button></div>
+  <div class="panel-scroll">
+    <section class="group">
+      <div class="group-head"><h2>Attachments</h2><button class="link" id="resetAtts" title="Remove every attachment">Reset</button></div>
+      <div id="attachmentSlots" class="slotlist"></div>
+      <p class="hint" id="attInfo"></p>
+    </section>
+
+    <section class="group">
+      <div class="group-head"><h2>Target</h2></div>
+      <div class="field slider">
+        <label for="distanceNum">Range</label><span class="numbox fpsbox"><input id="distanceNum" type="number" min="1" max="2000" step="any" value="50" title="Type any range, or pick a common one with the arrow"><i>st</i><button type="button" class="fps-dd" tabindex="-1" title="Common ranges" data-presets="10,25,50,75,100,150,200,300,500" data-unit="st"><svg class="ic"><use href="#i-chev"/></svg></button></span>
+        <input id="distance" type="range" min="5" max="600" step="1" value="50">
+      </div>
+      <div class="field"><label for="aimPoint">Aim at</label><select id="aimPoint"></select></div>
+      <div class="field"><label>Stance</label>
+        <div class="seg" id="stanceSeg"><button data-v="stand" class="on">Stand</button><button data-v="crouch">Crouch</button><button data-v="prone">Prone</button></div></div>
+      <div class="field"><label>Sight</label>
+        <div class="seg" id="aimSeg" title="Aim down sights or fire from the hip (H, or right-click the range)"><button data-v="aim" class="on">Aimed</button><button data-v="hip">Hip fire</button></div></div>
+      <div class="field"><label for="mouseAim">Mouse aim <span class="tip" data-tip="Pull against the recoil yourself: hold the right mouse button and move the mouse to move your aim (while shooting with the left button, or during Fire mag). Every bullet lands where you were aiming when it fired.">?</span></label><label class="switch"><input id="mouseAim" type="checkbox"><span></span></label></div>
+      <div class="field stack hidden" id="mouseSensRow"><label for="mouseSens">Mouse sensitivity</label><span class="val" id="mouseSensVal">1.00×</span>
+        <input id="mouseSens" type="range" min="0.2" max="3" step="0.05" value="1"></div>
+    </section>
+
+    <section class="group">
+      <div class="group-head"><h2>Shooting</h2></div>
+      <div class="field"><label for="firemode">Fire mode</label><div class="fmwrap"><div class="seg" id="firemodeSeg"></div><select id="firemode"></select></div></div>
+      <div class="field stack">
+        <label for="comp">Recoil control <span class="tip" data-tip="How much of the average recoil climb the shooter pulls against. 0% leaves the gun alone; 100% is a player who has perfectly learned the pattern, so only random spread is left.">?</span></label><span class="val" id="compVal">0%</span>
+        <input id="comp" type="range" min="0" max="100" step="5" value="0">
+      </div>
+        <div class="field"><label for="shots">Shots per mag</label><input id="shots" type="number" min="1" max="500" placeholder="Full mag"></div>
+        <div class="field" id="triggerRow"><label for="triggerRpm">Click rate <span class="tip" data-tip="Trigger pulls per minute for semi / burst modes. Leave empty for the fastest clicking the gun allows.">?</span></label><input id="triggerRpm" type="number" min="30" max="3000" placeholder="Fastest"></div>
+        <div class="field"><label for="health">Enemy health</label><span class="numbox unitbox"><input id="health" type="number" value="100" min="1" max="1000"><i>hp</i></span></div>
+        <div class="field"><label for="fps">Game FPS <span class="tip" data-tip="The game checks the trigger once per rendered frame, so very fast guns fire slightly differently at different frame rates.">?</span></label>
+          <span class="numbox fpsbox"><input id="fps" type="number" min="1" max="1000" step="any" value="60" title="Type any frame rate, or pick a common one with the arrow"><i>fps</i><button type="button" class="fps-dd" tabindex="-1" title="Common frame rates"><svg class="ic"><use href="#i-chev"/></svg></button></span></div>
+        <div class="field"><label for="gravity">Bullet drop</label><label class="switch"><input id="gravity" type="checkbox" checked><span></span></label></div>
+    </section>
+  </div>
+</aside>
+<button class="reopen left" data-reopen="leftPanel" title="Show setup"><svg class="ic"><use href="#i-panel"/></svg><span>Setup</span></button>
+
+<!-- ============================ RIGHT: ANALYSIS ============================ -->
+<aside class="panel right" id="rightPanel">
+  <div class="tabs" id="rightTabs">
+    <button data-tab="pattern" class="on">Pattern</button><button data-tab="stats">Gun stats</button><button data-tab="about" title="The gun's in-game description">Description</button>
+    <span class="spacer"></span>
+    <button class="panel-hide inline" data-collapse="rightPanel" title="Hide panel (])"><svg class="ic"><use href="#i-panelr"/></svg></button>
+  </div>
+  <div class="panel-scroll">
+    <section data-pane="pattern" class="pane on">
+      <div class="patcard">
+        <canvas id="patternCanvas"></canvas>
+        <div class="pat-tl"><div class="seg mini" id="patViewSeg"><button data-v="heat" class="on">Heatmap</button><button data-v="dots">Shots</button><button data-v="both">Both</button></div></div>
+        <div class="pat-br">
+          <button class="iconbtn mini" id="zoomOut" title="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button>
+          <button class="zoomval" id="zoomVal" title="Reset zoom">1.0×</button>
+          <button class="iconbtn mini" id="zoomIn" title="Zoom in"><svg class="ic"><use href="#i-plus"/></svg></button>
+          <span class="vsep"></span>
+          <button class="iconbtn mini toggle on" id="fitBtn" title="Fit everything drawn (off = fit the target)"><svg class="ic"><use href="#i-fit"/></svg></button>
+        </div>
+      </div>
+
+      <div class="dumpbar">
+        <div class="dumpctl">
+          <span class="numbox runs" title="How many full magazines to simulate"><input id="dumps" type="number" value="500" min="1" max="100000"><i>mags</i></span>
+          <button class="btn primary" id="dumpBtn"><svg class="ic"><use href="#i-bolt"/></svg>Simulate</button>
+          <button class="iconbtn" id="dumpClear" title="Clear results (X)"><svg class="ic"><use href="#i-erase"/></svg></button>
+          <label class="switch small" title="Re-run whenever the setup changes"><input type="checkbox" id="autoRun" checked><span></span><em>Auto</em></label>
+        </div>
+        <div class="status" id="dumpStatus"></div>
+      </div>
+
+      <div id="results" class="tiles"></div>
+      <button class="link more-toggle hidden" id="moreResults">Show all results</button>
+      <div class="pershot-wrap hidden" id="perShotWrap"><div class="minihead">Hit chance by shot</div><canvas id="perShot" class="pershot" height="44"></canvas></div>
+
+      <div class="group compare">
+        <div class="group-head"><h2>Compare</h2><button class="btn small" id="snapBtn" title="Keep this pattern to compare against later"><svg class="ic"><use href="#i-save"/></svg>Save pattern</button></div>
+        <div id="snapList" class="snaplist"></div>
+        <div id="compare"></div>
+      </div>
+    </section>
+
+    <section data-pane="about" class="pane">
+      <div id="aboutCard" class="about"></div>
+    </section>
+
+    <section data-pane="stats" class="pane">
+      <div id="statsCard" class="statlist"></div>
+      <div class="group">
+        <div class="group-head"><h2>Damage by range</h2>
+          <span class="btnrow"><button class="iconbtn mini" id="dmgZoomOut" title="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button><button class="iconbtn mini" id="dmgZoomIn" title="Zoom in"><svg class="ic"><use href="#i-plus"/></svg></button><button class="iconbtn mini" id="dmgReset" title="Whole range (or double-click the graph)"><svg class="ic"><use href="#i-fit"/></svg></button></span></div>
+        <canvas id="dmgGraph" class="dmggraph" title="Scroll to zoom · drag to pan · double-click to reset. Dots mark where shots-to-kill changes."></canvas>
+        <div id="stkText" class="stktext"></div>
+      </div>
+    </section>
+  </div>
+  <p class="unitfoot">Distances in <b>st</b> (studs) · the dummy is 5 st tall · 1 st ≈ 28 cm</p>
+</aside>
+<button class="reopen right" data-reopen="rightPanel" title="Show analysis"><span>Analysis</span><svg class="ic"><use href="#i-panelr"/></svg></button>
+
+<!-- ============================ DOCK ============================ -->
+<div class="readout" id="hud"></div>
+<div class="dock" id="dock">
+  <button class="btn fire" id="fireBtn" title="Fire one full magazine (F)"><svg class="ic"><use href="#i-play"/></svg><span>Fire mag</span><kbd>F</kbd></button>
+  <span class="dock-sep"></span>
+  <div class="seg mini" id="viewSeg" title="Camera (V)"><button data-v="first" class="on">1st</button><button data-v="third">3rd</button></div>
+  <select id="speed" class="mini" title="Playback speed"><option value="1">1×</option><option value="0.5">0.5×</option><option value="0.25">0.25×</option><option value="0.1">0.1×</option></select>
+  <button class="iconbtn toggle on" id="soundBtn" title="Sound"><svg class="ic"><use href="#i-vol"/></svg></button>
+  <button class="iconbtn" id="reloadBtn" title="New magazine (R)"><svg class="ic"><use href="#i-reload"/></svg></button>
+  <button class="iconbtn" id="clearBtn" title="Clear bullet holes (C)"><svg class="ic"><use href="#i-erase"/></svg></button>
+</div>
+<div class="toast hidden" id="toast"></div>
+<div class="errbanner hidden" id="errBanner"><svg class="ic"><use href="#i-info"/></svg><span class="msg"></span><button class="iconbtn mini" title="Dismiss"><svg class="ic"><use href="#i-x"/></svg></button></div>
+
+<!-- ============================ POPOVERS ============================ -->
+<div class="popover picker hidden" id="weaponPicker">
+  <div class="pk-search"><svg class="ic"><use href="#i-search"/></svg><input id="weaponSearch" placeholder="Search 299 guns…" autocomplete="off" spellcheck="false"><kbd>Esc</kbd></div>
+  <div class="pk-cats" id="weaponCats"></div>
+  <div class="pk-list" id="weaponList"></div>
+</div>
+<div class="popover picker hidden" id="attPicker">
+  <div class="pk-search"><svg class="ic"><use href="#i-search"/></svg><input id="attSearch" placeholder="Search…" autocomplete="off" spellcheck="false"></div>
+  <div class="pk-list" id="attList"></div>
+</div>
+<div class="popover menu hidden" id="prefsPop">
+  <h3>Display</h3>
+  <div class="field"><label for="pFov">Field of view</label><div class="rangefield"><input id="pFov" type="range" min="50" max="100" step="1"><span class="val" id="pFovVal"></span></div></div>
+  <div class="field"><label for="pGhost">Gun when aimed</label><div class="rangefield"><input id="pGhost" type="range" min="0" max="100" step="5"><span class="val" id="pGhostVal"></span></div></div>
+  <div class="field"><label>Tracers</label><label class="switch"><input id="pTracers" type="checkbox"><span></span></label></div>
+  <div class="field"><label>Range markers</label><label class="switch"><input id="pMarkers" type="checkbox"><span></span></label></div>
+  <div class="field"><label>Shot numbers</label><label class="switch"><input id="pNumbers" type="checkbox"><span></span></label></div>
+  <div class="field"><label for="pHeat">Heatmap colours</label><select id="pHeat"><option value="thermal">Thermal</option><option value="ember">Ember</option><option value="ice">Ice</option><option value="mono">Mono</option></select></div>
+  <h3>Sound &amp; interface</h3>
+  <div class="field"><label>Translucent panels <span class="tip" data-tip="Blurs the range behind the panels. Turn off if the range feels slow on your computer.">?</span></label><label class="switch"><input id="pGlass" type="checkbox"><span></span></label></div>
+  <div class="field"><label for="pVol">Volume</label><div class="rangefield"><input id="pVol" type="range" min="0" max="100" step="5"><span class="val" id="pVolVal"></span></div></div>
+  <p class="hint">Interface size: use your browser's zoom (Ctrl + / Ctrl −).</p>
+  <div class="menu-foot"><button class="link" id="prefsReset">Restore defaults</button></div>
+</div>
+<div class="popover menu help hidden" id="helpPop">
+  <h3>On the range</h3>
+  <dl class="keys">
+    <dt><kbd>Hold LMB</kbd></dt><dd>Shoot — let go to pause, the mag carries on</dd>
+    <dt><kbd>RMB</kbd></dt><dd>Click: aimed / hip fire. Hold + move: your own aim (Mouse aim on), or orbit in 3rd person</dd>
+    <dt><kbd>MMB</kbd></dt><dd>Drag to orbit in 3rd person</dd>
+    <dt><kbd>F</kbd></dt><dd>Fire a full magazine</dd>
+    <dt><kbd>R</kbd></dt><dd>New magazine</dd>
+    <dt><kbd>C</kbd></dt><dd>Clear bullet holes</dd>
+    <dt><kbd>X</kbd></dt><dd>Clear simulation results</dd>
+    <dt><kbd>H</kbd></dt><dd>Aimed / hip fire</dd>
+    <dt><kbd>V</kbd></dt><dd>1st / 3rd person</dd>
+    <dt><kbd>G</kbd></dt><dd>Change gun</dd>
+    <dt><kbd>B</kbd></dt><dd>Best setup finder</dd>
+    <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Hide / show side panels</dd>
+  </dl>
+  <h3>Reading the pattern</h3>
+  <p><b>Climb</b> is how far the average pattern drifts from where you aim — a player can learn to pull against it. <b>Spread</b> is the random scatter around that pattern that nobody can learn away.</p>
+</div>
+
+<!-- ============================ BEST SETUP ============================ -->
+<div class="modal hidden" id="optModal">
+  <div class="sheet">
+    <header class="sheet-head">
+      <div class="sheet-title"><h1>Best setup for</h1>
+        <button class="weaponchip small" id="optGun" title="Pick the gun to search (starts as the one on the range)"><span class="wc-text"><span class="wc-class" id="optGunClass">—</span><span class="wc-name" id="optGunName">—</span></span><svg class="ic"><use href="#i-chev"/></svg></button></div>
+      <div class="sheet-acts"><button class="iconbtn" id="optFull" title="Full screen (F)"><svg class="ic"><use href="#i-fit"/></svg></button>
+      <button class="iconbtn" id="optClose" title="Close (Esc)"><svg class="ic"><use href="#i-x"/></svg></button></div>
+    </header>
+    <div class="sheet-body opt">
+      <aside class="opt-side">
+        <div class="group">
+          <div class="group-head"><h2>Goal</h2></div>
+          <select id="metric" data-hints="goal"></select>
+          <div class="field hidden" id="oneshotRow"><label for="oneshotChance">Counts as a one-shot <span class="tip" data-tip="How reliably the first shot has to kill at a range for it to count. 80% = at least 4 out of 5 shots kill there.">?</span></label>
+            <select id="oneshotChance"><option value="50">50% of shots</option><option value="80" selected>80% of shots</option><option value="95">95% of shots</option></select></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Scenario</h2><button class="btn small" id="optSync" title="Copy range, aim point, stance, sight, fire mode, recoil control, health and FPS from the Setup panel">Copy from range</button></div>
+          <p class="hint">Used only by this search — it doesn't change the range.</p>
+          <div class="field"><label for="oDistance">Range</label><span class="numbox fpsbox"><input id="oDistance" type="number" min="1" max="2000" step="any" title="Type any range, or pick a common one with the arrow"><i>st</i><button type="button" class="fps-dd" tabindex="-1" title="Common ranges" data-presets="10,25,50,75,100,150,200,300,500" data-unit="st"><svg class="ic"><use href="#i-chev"/></svg></button></span></div>
+          <div class="field"><label for="oAimPoint">Aim at</label><select id="oAimPoint"></select></div>
+          <div class="field"><label>Stance</label><div class="seg" id="oStanceSeg"><button data-v="stand" class="on">Stand</button><button data-v="crouch">Crouch</button><button data-v="prone">Prone</button></div></div>
+          <div class="field"><label>Sight</label><div class="seg" id="optAimSeg"><button data-v="aim" class="on">Aimed</button><button data-v="hip">Hip fire</button></div></div>
+          <div class="field"><label for="oFiremode">Fire mode</label><select id="oFiremode"></select></div>
+          <div class="field stack"><label for="optComp">Recoil control <span class="tip" data-tip="How well the shooter pulls against the average recoil pattern during this search. 100% = perfectly learned, so only random spread is left; 0% = gun left alone.">?</span></label><span class="val" id="optCompVal">100%</span>
+            <input id="optComp" type="range" min="0" max="100" step="5" value="100"></div>
+          <div class="field"><label for="oHealth">Enemy health</label><span class="numbox unitbox"><input id="oHealth" type="number" min="1" max="1000"><i>hp</i></span></div>
+          <div class="field"><label for="oFps">Game FPS</label><span class="numbox fpsbox"><input id="oFps" type="number" min="1" max="1000" step="any" value="60" title="Type any frame rate, or pick a common one with the arrow"><i>fps</i><button type="button" class="fps-dd" tabindex="-1" title="Common frame rates"><svg class="ic"><use href="#i-chev"/></svg></button></span></div>
+          <div class="field"><label>Bullet drop <span class="tip" data-tip="Off (recommended): you aim for drop at this range, so drop never counts as recoil. On: bullets drop below where you aim, which favours fast bullets.">?</span></label><label class="switch"><input id="oDrop" type="checkbox"><span></span></label></div>
+        </div>
+        <div class="group">
+          <div class="group-head"><h2>Search</h2></div>
+          <div class="field"><label for="optDepth">Depth</label><select id="optDepth"><option value="thorough">Thorough</option><option value="standard">Standard</option><option value="quick">Quick</option></select></div>
+          <div class="field"><label for="optTop">Setups listed</label><div class="countpick"><select id="optTop"><option value="5">5</option><option value="10" selected>10</option><option value="20">20</option><option value="50">50</option><option value="0">All</option><option value="custom">Custom…</option></select><input id="optTopN" type="number" min="1" max="2000" class="hidden" title="How many setups to list"></div></div>
+          <p class="hint" id="optTopHint"></p>
+        </div>
+      </aside>
+      <section class="opt-main">
+        <div class="opt-run">
+          <button class="btn primary big" id="optBtn"><svg class="ic"><use href="#i-best"/></svg>Find best setup</button>
+          <button class="btn" id="optStop" hidden><svg class="ic"><use href="#i-stop"/></svg>Stop</button>
+          <div class="progress" id="optProgress"><div class="bar"></div><span class="label"></span></div>
+        </div>
+        <div class="slotstrip-head"><h2>Slots to search</h2><span class="hint">Lock a slot to search around one attachment. Joke attachments start out excluded.</span><button class="link" id="optDefaults" title="Change which attachments are excluded by default">Edit default list</button><button class="link" id="optReset">Reset all</button></div>
+        <div id="optSlots" class="optslots"></div>
+        <div class="exeditor hidden" id="exEditor"></div>
+        <div id="optResults" class="optresults"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ EXPORT ============================ -->
+<div class="modal hidden" id="exportModal">
+  <div class="sheet">
+    <header class="sheet-head">
+      <div><h1>Export</h1><p class="sub">Tables that paste straight into Google Sheets, or download as Excel / CSV.</p></div>
+      <div class="sheet-acts"><button class="iconbtn" id="exportFull" title="Full screen (F)"><svg class="ic"><use href="#i-fit"/></svg></button>
+      <button class="iconbtn" id="exportClose" title="Close (Esc)"><svg class="ic"><use href="#i-x"/></svg></button></div>
+    </header>
+    <div class="sheet-body export">
+      <nav class="ex-kinds" id="exKinds"></nav>
+      <section class="ex-main">
+        <div class="ex-scroll">
+          <div id="exOptions" class="ex-options"></div>
+          <div class="ex-run" id="exRun"></div>
+          <div class="ex-preview">
+            <div class="group-head"><h2>Preview</h2><span class="hint" id="exCount"></span></div>
+            <div class="tablewrap" id="exPreview"></div>
+          </div>
+        </div>
+        <footer class="ex-actions">
+          <button class="btn primary" id="exCopy"><svg class="ic"><use href="#i-copy"/></svg>Copy for Google Sheets</button>
+          <button class="btn" id="exXlsx"><svg class="ic"><use href="#i-down"/></svg>Excel (.xlsx)</button>
+          <button class="btn" id="exCsv"><svg class="ic"><use href="#i-down"/></svg>CSV</button>
+          <span class="hint" id="exHint">After copying, click cell A1 in a sheet and paste.</span>
+        </footer>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="modal hidden" id="defModal">
+  <div class="dialog wide">
+    <h1>Default exclusions</h1>
+    <p>Attachments every search leaves out by default: the Best setup finder (for guns whose list you haven't changed) and the every-gun export. Red = excluded; click to toggle. Kept on this computer.</p>
+    <div class="exedit-head"><div class="seg mini" id="defSlots"></div><input id="defSearch" placeholder="Filter…"></div>
+    <div class="chips" id="defChips"></div>
+    <div class="dialog-actions"><span class="hint" id="defCount"></span><span class="spacer"></span><button class="btn" id="defBuiltin">Restore built-in list</button><button class="btn primary" id="defDone">Done</button></div>
+  </div>
+</div>
+
+<div class="modal hidden" id="loadModal">
+  <div class="dialog">
+    <h1>Pick up where you left off?</h1>
+    <p id="loadInfo"></p>
+    <div class="dialog-actions"><button class="btn" id="loadNo">Start fresh</button><button class="btn primary" id="loadYes">Load previous session</button></div>
+  </div>
+</div>
+
+<div class="tooltip hidden" id="tooltip"></div>
+
+<script src="renderer.js"></script>
+<script src="core.js"></script>
+<script src="range.js"></script>
+<script src="panels.js"></script>
+<script src="finder.js"></script>
+<script src="export.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
