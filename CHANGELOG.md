@@ -680,3 +680,66 @@ README brought up to date with the code:
 - The line of small text inside the button is gone. The button still pulses
   while the result is out of date, and the result area says "Changed since the
   last Combine Recoil". Ctrl+Enter still works.
+
+## Batch 31 — designer fixes
+
+- **Fixed: "After the line" did nothing with placed shots.** It only looked at
+  the drawn line, so with *Place shots* (or a line covering the whole magazine)
+  every later shot was free and the recoil ran off to the side. It's now
+  **After your shots**: it starts after the last shot you gave a place, line or
+  placed, in the direction of your last shots. *Settle* is the default.
+- **Free shots can't run away any more.** A free shot gets a very light hint —
+  along the straight line between the placed shots around it, or carrying on
+  after the last one — that only matters when nothing else does.
+- **Fixed: recoil that "spazzed out".** Three causes:
+  - Between shots the fit couldn't see the view, so springs could twitch
+    wildly between shots and still land every one. Extra checks now keep the
+    motion between two shots near the line between them, and the return after
+    the last shot a smooth glide (no more overshoot dips). New **Smoothness**
+    setting (Camera tab, default 30 %).
+  - Layers could cancel each other with huge kicks; the kicks are now kept in
+    check.
+  - With *Randomness*, each layer's variance was a share of its own kick, so
+    cancelling layers piled up enormous spread (±4 st at shot 30 in one test).
+    Randomness is now a share of each shot's step along the pattern, and the
+    variances are solved to match (±1 st there).
+- **Fixed: resizing one spread ring resized all of them.** Rings used to carry
+  over to the shots around them; now each ring belongs to its own shot. *Set* /
+  *Growing* put a ring on every shot; shots without a ring use Randomness.
+- Test updated: recreating the G11K2 from its own springs uses Smoothness 0.
+
+## Batch 32
+
+- **Clear now clears the combined recoil too** (the orange path, spread and
+  miss lines): the pattern, rings and the camera go back to what the design
+  started from. Gun & view edits stay, and *Undo* brings everything back,
+  including whether the result was up to date.
+- Until you press Combine Recoil, the recoil you started from is drawn as a
+  grey dashed path (a reference, not a result); orange is only a combined
+  result.
+
+## Batch 33
+
+- The orange path, spread and landing dots of the gun's own recoil show again
+  when the designer opens (Batch 32 had turned them into a faint grey line
+  before the first Combine Recoil). Orange is always what the recoil being
+  designed does; *Clear* puts it back to the recoil you started from.
+
+## Batch 34
+
+- **Reset** button in the designer's toolbar, next to Clear: everything back to
+  how the designer opens — the gun's recoil as it is now (every part, Gun &
+  view included, *Start from* back to it), no pattern or rings, and the
+  default settings (feel, layers, smoothness, snap back, recovery, punch,
+  shake, randomness, After your shots, magazine, range). Undo brings the
+  pattern and recoil back.
+
+## Batch 35
+
+- **Clear empties the canvas again**, while the gun's own orange recoil still
+  shows when the designer opens: Clear hides the orange path, spread rings,
+  landing dots, miss lines and the Motion chart (and undoes Combine Recoil).
+  They come back with the next Combine Recoil, Reset, Copy pattern, a new
+  *Start from*, the other stance, or an edit to the camera layers or Gun &
+  view parts. Drawing a new pattern keeps the canvas clean. Undo brings back
+  what Clear removed.

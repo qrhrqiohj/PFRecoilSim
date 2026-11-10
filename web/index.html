@@ -375,7 +375,8 @@
           <span class="vsep"></span>
           <button class="btn small" id="rdUndo" title="Undo (Ctrl+Z)">Undo</button>
           <button class="btn small" id="rdRedo" title="Redo (Ctrl+Y)">Redo</button>
-          <button class="btn small" id="rdClear" title="Start over (keeps the gun &amp; view parts)">Clear</button>
+          <button class="btn small" id="rdClear" title="Remove the pattern and the combined camera recoil (keeps the Gun &amp; view parts)">Clear</button>
+          <button class="btn small" id="rdReset" title="Everything back to how the designer opens: the gun's recoil as it is now (every part), no pattern, default settings (Undo brings the pattern and recoil back)">Reset</button>
           <button class="btn small" id="rdFromGun" title="Every shot where the current recoil puts it, and how widely it spreads, as targets to edit from">Copy pattern</button>
           <button class="btn small" id="rdMirror" title="Flip left / right">Mirror</button>
           <button class="btn small" id="rdSmooth" title="Smooth out jitter">Smooth</button>
@@ -401,13 +402,13 @@
             <div class="field"><label for="rdSource">Start from <span class="tip" data-tip="The recoil the design starts from — every part (camera, gun kick, view shake). Pick another gun to build on its recoil; Copy pattern then puts its shots on the canvas to edit.">?</span></label><select id="rdSource"></select></div>
             <div class="field"><label for="rdShots">Magazine <span class="tip" data-tip="How many shots the pattern has (the gun's magazine by default).">?</span></label><span class="numbox"><input id="rdShots" type="number" min="2" max="300"><i>shots</i></span></div>
             <div class="field"><label for="rdCover">Line covers <span class="tip" data-tip="How many of the shots the drawn line is spread over. The rest follow the 'after the line' rule — and every shot can still be moved by hand.">?</span></label><span class="numbox"><input id="rdCover" type="number" min="2" max="300"><i>shots</i></span></div>
-            <div class="field"><label>After the line <span class="tip" data-tip="The shots after the line: Free — the recoil carries on however it naturally would; Settle — they stay around the last point; Keep going — they carry on in the line's last direction, slowing down. Settle and Keep going are soft targets.">?</span></label><div class="seg" id="rdAfter"><button data-v="free" class="on">Free</button><button data-v="settle">Settle</button><button data-v="trend">Keep going</button></div></div>
+            <div class="field"><label>After your shots <span class="tip" data-tip="The shots after the last one you gave a place (on the line or placed yourself): Settle — they stay around it; Keep going — they carry on in the direction of your last shots, slowing down; Free — no target, the springs carry on however they naturally do. Settle and Keep going are soft targets, and any of these shots can still be moved by hand.">?</span></label><div class="seg" id="rdAfter"><button data-v="settle" class="on">Settle</button><button data-v="trend">Keep going</button><button data-v="free">Free</button></div></div>
             <div class="field"><label for="rdDist">Range</label><span class="numbox"><input id="rdDist" type="number" min="5" max="1000" value="50"><i>st</i></span></div>
           </section>
           <section class="rd-sec" id="rdShotBox"></section>
           <section class="rd-sec">
-            <h3>Spread rings <span class="tip" data-tip="A ring around a shot says how widely it may land around its point (about 19 magazines in 20 land inside). Set rings on a few shots — the ones between follow smoothly — and Combine Recoil works out each layer's randomness to match. With no rings, Randomness (Camera tab) is used.">?</span></h3>
-            <div class="rd-row"><span class="hint">Every shot ±</span><span class="numbox small"><input id="rdRingAll" type="number" min="0" max="20" step="0.05" value="0.5"><i>st</i></span><button class="btn small" id="rdRingSet">Set</button><button class="btn small" id="rdRingGrow" title="Small at the start, growing to this size at the last shot">Growing</button><button class="link" id="rdRingClear">Clear</button></div>
+            <h3>Spread rings <span class="tip" data-tip="A ring around a shot says how widely that shot may land around its point (about 19 magazines in 20 land inside). Each ring belongs to its own shot; Combine Recoil works out each layer's randomness to match. Shots without a ring spread by Randomness (Camera tab).">?</span></h3>
+            <div class="rd-row"><span class="hint">Every shot ±</span><span class="numbox small"><input id="rdRingAll" type="number" min="0" max="20" step="0.05" value="0.5"><i>st</i></span><button class="btn small" id="rdRingSet">Set</button><button class="btn small" id="rdRingGrow" title="A ring on every shot: small at the start, growing to this size at the last shot">Growing</button><button class="link" id="rdRingClear">Clear</button></div>
             <p class="hint" id="rdRingInfo"></p>
           </section>
         </div>
@@ -415,6 +416,7 @@
           <section class="rd-sec">
             <div class="field"><label>Feel <span class="tip" data-tip="Which springs the designer may use. Game-like: like the game's own guns — fast springs may bounce a little, slow ones never do (no floaty swinging). Smooth: nothing bounces. Free: anything, for zig-zags and wild patterns.">?</span></label><div class="seg" id="rdFeel"><button data-v="game" class="on">Game-like</button><button data-v="smooth">Smooth</button><button data-v="free">Free</button></div></div>
             <div class="field"><label for="rdLayers">Layers <span class="tip" data-tip="Spring layers per direction (pitch and yaw). Auto adds layers until more stop helping. The game takes any number.">?</span></label><select id="rdLayers"></select></div>
+            <div class="field stack"><label for="rdCalm">Smoothness <span class="tip" data-tip="How strongly the view is kept on a calm path between shots and after the last one. Higher: smoother, no twitching between shots; lower: lands on your targets more exactly (0% to recreate a gun's own twitchy springs).">?</span></label><span class="val" id="rdCalmVal">30%</span><input id="rdCalm" type="range" min="0" max="100" step="5" value="30"></div>
             <div class="field stack"><label for="rdSnap">Snap back <span class="tip" data-tip="How soon after you stop firing the view should be back at the centre. Every layer gets a recovery spring (the game switches to it when no shot has come for the delay below). Off: no preference.">?</span></label><span class="val" id="rdSnapVal">0.6 s</span><input id="rdSnap" type="range" min="0.2" max="3" step="0.05" value="0.6"></div>
             <label class="check"><input type="checkbox" id="rdSnapOn" checked> Pull the view back to the centre after the last shot</label>
             <div class="rd-trio">
@@ -427,7 +429,7 @@
             <h3>Per shot</h3>
             <div class="field stack"><label for="rdPunch">Punch <span class="tip" data-tip="A sharp upward kick on every shot that is gone again before the next one: you feel and see it, the pattern barely changes (the fit works around it). Like the game's fast camera layer.">?</span></label><span class="val" id="rdPunchVal">0</span><input id="rdPunch" type="range" min="0" max="4" step="0.05" value="0"></div>
             <div class="field stack"><label for="rdShake">Side shake <span class="tip" data-tip="A quick random left / right kick on every shot (randomness only, no drift).">?</span></label><span class="val" id="rdShakeVal">0</span><input id="rdShake" type="range" min="0" max="2" step="0.05" value="0"></div>
-            <div class="field stack"><label for="rdVar">Randomness <span class="tip" data-tip="Without spread rings: how much each kick varies around its average (the game's variance), as a share of the kick. 0% = every magazine lands the same.">?</span></label><span class="val" id="rdVarVal">30%</span><input id="rdVar" type="range" min="0" max="100" step="5" value="30"></div>
+            <div class="field stack"><label for="rdVar">Randomness <span class="tip" data-tip="For shots without a spread ring: how random each shot's kick is, as a share of that shot's step along the pattern (the variations add up shot after shot, as in game). 0% = every magazine lands the same.">?</span></label><span class="val" id="rdVarVal">30%</span><input id="rdVar" type="range" min="0" max="100" step="5" value="30"></div>
           </section>
           <section class="rd-sec" id="rdLayersBox" hidden></section>
         </div>

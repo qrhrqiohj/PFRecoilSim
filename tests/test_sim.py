@@ -501,7 +501,8 @@ class OneShotAndClimb(unittest.TestCase):
             self.assertLess(np.abs(np.array(r["sigma"]) - np.array(pv["sigma"])).mean(), 0.02)
         # with the gun's own springs only the kicks are left: an exact match
         sl = split_layers(gd.base_recoil("G11K2"), "aimCameraBody")
-        r = fit_recoil(gd, {**base, "points": pv["path"], "springs": {ax: [a[:2] + a[4:6] for a in sl[ax]] for ax in "xy"}})
+        r = fit_recoil(gd, {**base, "points": pv["path"], "springs": {ax: [a[:2] + a[4:6] for a in sl[ax]] for ax in "xy"},
+                            "smooth": 0, "recovery": {"snap": None}})
         self.assertLess(r["rms"], 0.005)
         self.assertAlmostEqual(r["layers"]["x"][0][2], 1.5, places=2)
 

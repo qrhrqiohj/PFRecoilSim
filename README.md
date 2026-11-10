@@ -206,20 +206,35 @@ tab) picks its game values or any other gun's recoil instead — every part.
   (Shift: more), `[` / `]` step through the shots, Delete frees it. Drag the small squares on
   the selected shot's ring (or Shift+wheel) to size its spread.
 
-A thin line joins the shots in order in every tool. *After the line*: Free,
-Settle around the last point, or Keep going (soft targets). *Copy pattern* puts
+A thin line joins the shots in order in every tool. **After your shots**
+decides the shots after the last one you gave a place (on the line or placed
+yourself): *Settle* around it (the default), *Keep going* in the direction of
+your last shots, slowing down (both soft targets), or *Free* (no target — only
+a very light hint to carry on, so the springs can't run off sideways). A free
+shot between two placed ones gets the same light hint along the straight line
+between them. *Copy pattern* puts
 every shot of the current recoil — and its spread — on the canvas to edit.
-*Undo / Redo* (Ctrl+Z / Ctrl+Y), *Clear*, *Mirror* and *Smooth* work on the
-pattern; the *Rings* switch shows or hides the spread rings, *Spread* draws 150
+*Undo / Redo* (Ctrl+Z / Ctrl+Y), *Mirror* and *Smooth* work on the pattern;
+*Clear* empties the canvas: the pattern, rings and the orange recoil (path,
+spread, landing dots and the Motion chart), and undoes Combine Recoil (the
+camera goes back to what the design started from; Gun & view edits stay). The
+orange comes back with the next Combine Recoil, Reset, Copy pattern or any
+change to the recoil itself; Undo brings it all back.
+*Reset* puts everything back to how the designer opens: the gun's recoil as it
+is now (every part, Gun & view included), no pattern and the default settings
+(Undo brings the pattern and recoil back). Orange is
+always what the recoil being designed does — the gun's own until you combine —
+with red lines to your targets; the *Rings* switch shows or hides the spread rings, *Spread* draws 150
 simulated magazines (randomness included); wheel zooms, right / middle drag
 pans. The Motion chart's chips switch its lines on and off.
 
 The **selected shot** panel: when it fires, how much it **counts** (Free /
 Soft / Normal / Strong / Lock), its **spread ring** (± left/right and ±
 up/down in studs: about 19 magazines in 20 land inside) and where it really
-lands and spreads. Rings set on some shots carry over smoothly to the shots
-between them; *Spread rings* sets one size for all, or one that grows through
-the magazine.
+lands and spreads. A ring belongs to its own shot only — resizing one never
+changes the others; shots without a ring spread by *Randomness*. *Spread
+rings* puts a ring of one size on every shot, or one that grows through the
+magazine.
 
 **Combine Recoil** — the big button at the bottom of the side panel, on every tab
 (or Ctrl+Enter) — builds the final recoil: it fits the camera's pitch / yaw
@@ -233,6 +248,11 @@ view parts, in a second or two. It pulses while the result is out of date
   slow ones never do — no floaty swinging), *Smooth* (nothing bounces) or
   *Free* (anything, for zig-zags).
 * **Layers**: Auto or 1–16 per direction.
+* **Smoothness** (default 30 %): how strongly the view is kept on a calm path
+  between shots and after the last one. The fit only sees where each shot
+  lands, so without it springs could twitch wildly between shots and still hit
+  every target. Lower it to match targets more exactly (0 % to recreate a gun's
+  own twitchy springs).
 * **Snap back**: how soon after the last shot the view should be back at the
   centre. Every layer gets its own **recovery spring** (the game pairs them by
   layer and switches to them when no shot has come for the *delay*); the
@@ -240,9 +260,12 @@ view parts, in a second or two. It pulses while the result is out of date
 * **Punch** (a sharp kick on each shot that's gone before the next — felt, not
   seen in the pattern) and **Side shake** (random left / right per shot) are
   layers kept as they are, which the fit works around.
-* **Randomness**: each kick's variance as a share of the kick, used when no
-  spread rings are set. With rings, each layer's variance is solved so every
-  shot spreads as asked (adding randomness-only layers where needed).
+* **Randomness** (shots without a ring): how random each shot's kick is, as a
+  share of that shot's step along the pattern; the variations add up shot after
+  shot, as in game (an AK-47-like pattern at 30 % spreads about like the
+  AK-47). Either way each layer's variance is solved so every shot spreads as
+  asked (adding randomness-only layers where needed), so layers that cancel
+  each other can't pile up randomness.
 
 The **Camera layers** table lists every layer — damping, speed, kick,
 variance, recovery damping and speed — editable, with the picture updating

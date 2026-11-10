@@ -32,11 +32,11 @@ const RD_PRESET_BASE = {
   CameraBody: { z: [0.45, 60, 0, 0.4] },
 };
 const rd = {
-  weapon: null, stance: "aim", tool: "line", after: "free", n: 30, cover: 30,
+  weapon: null, stance: "aim", tool: "line", after: "settle", n: 30, cover: 30,
   ctrl: [], manual: {}, weight: {}, ring: {}, sel: -1,
   recoil: null, source: "this:edited", tags: { x: [], y: [] },
   live: null, fitInfo: null, partsChanged: false, scatter: null, busy: false, liveSeq: 0,
-  feel: "game", layers: "auto", variance: 0.3, snap: 0.6, snapOn: true, recD: 0.85, recS: 15, delay: 0.1, punch: 0, shake: 0,
+  feel: "game", layers: "auto", variance: 0.3, smooth: 0.3, snap: 0.6, snapOn: true, recD: 0.85, recS: 15, delay: 0.1, punch: 0, shake: 0,
   view: { cx: 0, cy: 3, scale: 30 }, drag: null, undo: [], redo: [],
   moShow: { camP: true, camY: true, gunP: true, view: false },
 };
@@ -44,15 +44,23 @@ const rdG = (part) => rd.stance + part;          // e.g. "aimRotation"
 const rdCam = () => rdG("CameraBody");
 
 /* ------------------------------------------------------------------ pattern model */
-const rdSnap = () => JSON.stringify({ ctrl: rd.ctrl, manual: rd.manual, weight: rd.weight, ring: rd.ring, cover: rd.cover, after: rd.after, n: rd.n });
+const rdSnap = () => JSON.stringify({ ctrl: rd.ctrl, manual: rd.manual, weight: rd.weight, ring: rd.ring, cover: rd.cover, after: rd.after, n: rd.n,
+  recoil: rd.recoil, tags: rd.tags, fitInfo: rd.fitInfo, hideLive: !!rd.hideLive });
 function rdPush() { rd.undo.push(rdSnap()); if (rd.undo.length > 200) rd.undo.shift(); rd.redo = []; }
 function rdRestore(json) {
   const o = JSON.parse(json);
+  const recoilChanged = o.recoil && JSON.stringify(o.recoil) !== JSON.stringify(rd.recoil);
   Object.assign(rd, { ctrl: o.ctrl, manual: o.manual, weight: o.weight, ring: o.ring || {}, cover: o.cover, after: o.after, n: o.n });
+  if (o.recoil) { rd.recoil = o.recoil; rd.tags = o.tags || { x: [], y: [] }; rd.fitInfo = o.fitInfo || null; rd.hideLive = !!o.hideLive; }
   $("rdShots").value = rd.n; $("rdCover").value = rd.cover; rd.setAfter(rd.after);
-  rdChanged();
+  if (recoilChanged) { rd.scatter = null; rdRenderLayers(); if (rd.tab === "parts") rdRenderParts(); rdLive(); }
+  rdChanged(); rdDrawMotion();
+  if (o.recoil) { rd.fitInfo = o.fitInfo ? JSON.parse(JSON.stringify(o.fitInfo)) : null; if (rd.fitInfo) rd.fitInfo.stale = !!(JSON.parse(json).fitInfo || {}).stale; rdShowResult(); }  // undo brings back whether it was up to date
 }
 const rdFirst = () => (rd.live && rd.live.path[0]) || [0, 0];
+/* what the recoil does (orange path, spread, landing dots, motion) — hidden after
+   Clear until you combine, reset, change the recoil or copy a pattern */
+const rdShown = () => (rd.hideLive ? null : rd.live);
 /* the drawn line; its first point is always shot 1, which fires before any recoil */
 const rdCtrl = () => (rd.ctrl.length ? [rdFirst(), ...rd.ctrl.slice(1)] : []);
 function rdAlongLine(count) {
@@ -73,17 +81,27 @@ function rdAlongLine(count) {
 /* every shot: {x, y, src: "first" | "manual" | "line" | "after" | "free", w} */
 function rdShotsList() {
   const n = rd.n, cover = Math.min(rd.cover, n), line = rdAlongLine(cover), out = [];
-  const last = line.length ? line[line.length - 1] : null;
+  // the shots you gave a place: from the line or placed / moved yourself
+  const own = (i) => (i === 0 ? rdFirst() : rd.manual[i] ? rd.manual[i] : i < line.length ? line[i] : null);
+  // "after the line" starts after the last of them (line or placed shots alike),
+  // in the direction of the last few
+  let lastI = -1;
+  for (let i = n - 1; i >= 1; i--) if (own(i)) { lastI = i; break; }
+  const last = lastI >= 1 ? own(lastI) : null;
   let step = null;
-  if (line.length >= 2) { const a = line[line.length - 2], b = line[line.length - 1]; step = [b[0] - a[0], b[1] - a[1]]; }
+  if (last) {
+    let j = lastI - 1, steps = 0;
+    while (j >= 0 && !own(j)) j--;
+    if (j >= 0) { const a = own(j); steps = lastI - j; step = [(last[0] - a[0]) / steps, (last[1] - a[1]) / steps]; }
+  }
   for (let i = 0; i < n; i++) {
     let s;
     if (i === 0) { const f = rdFirst(); out.push({ x: f[0], y: f[1], src: "first", w: 0 }); continue; }
     if (rd.manual[i]) s = { x: rd.manual[i][0], y: rd.manual[i][1], src: "manual", w: RD_W.normal };
     else if (i < line.length) s = { x: line[i][0], y: line[i][1], src: "line", w: RD_W.normal };
-    else if (last && rd.after === "settle") s = { x: last[0], y: last[1], src: "after", w: RD_W.soft };
-    else if (last && rd.after === "trend" && step) {
-      const j = i - line.length + 1, f = (1 - Math.pow(0.85, j)) / (1 - 0.85);
+    else if (last && i > lastI && rd.after === "settle") s = { x: last[0], y: last[1], src: "after", w: RD_W.soft };
+    else if (last && i > lastI && rd.after === "trend" && step) {
+      const j = i - lastI, f = (1 - Math.pow(0.85, j)) / (1 - 0.85);
       s = { x: last[0] + step[0] * f, y: last[1] + step[1] * f, src: "after", w: RD_W.soft };
     } else s = { x: null, y: null, src: "free", w: 0 };
     if (rd.weight[i] != null) s.w = RD_W[rd.weight[i]];
@@ -96,15 +114,8 @@ function rdWeightName(i, sh) { return rd.weight[i] || (sh.src === "free" ? "free
 /* spread rings: set on some shots, the ones between follow smoothly; [±x, ±y] studs (~2 sigma) */
 function rdRingKeys() { return Object.keys(rd.ring).map(Number).filter((i) => i > 0 && i < rd.n).sort((a, b) => a - b); }
 function rdRingAt(i) {
-  if (i < 1) return null;
-  const keys = rdRingKeys();
-  if (!keys.length) return null;
-  if (rd.ring[i]) return { r: rd.ring[i], key: true };
-  if (i < keys[0]) return { r: rd.ring[keys[0]], key: false };
-  if (i > keys[keys.length - 1]) return { r: rd.ring[keys[keys.length - 1]], key: false };
-  let a = keys[0];
-  for (const k of keys) { if (k < i) a = k; else { const f = (i - a) / (k - a), A = rd.ring[a], B = rd.ring[k]; return { r: [A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f], key: false }; } }
-  return null;
+  // a ring belongs to its own shot only (shots without one use Randomness)
+  return i >= 1 && rd.ring[i] ? { r: rd.ring[i], key: true } : null;
 }
 
 /* ------------------------------------------------------------------ working recoil */
@@ -139,7 +150,7 @@ function rdLive(now) {
       const r = await api("/api/recoil/path", rdSimReq({ recoil: rd.recoil, sigma: true, track: true, runs: $("rdSpread").checked ? 150 : 0 }));
       if (seq !== rd.liveSeq) return;
       rd.live = { path: r.path, sigma: r.sigma, track: r.track, settle: r.settle, times: r.times };
-      rd.scatter = r.scatter || null;
+      rd.scatter = rd.hideLive ? null : r.scatter || null;
       rdAfterLive();
     } catch (e) { if (seq === rd.liveSeq) $("rdResult").innerHTML = `<p class="error">${esc(e.message)}</p>`; }
   };
@@ -196,9 +207,10 @@ function rdDraw() {
     c.fillStyle = "rgba(255,178,36,.16)";
     for (const mag of rd.scatter) for (const p of mag) { if (Math.abs(p[0]) > 1e5) continue; const [x, y] = P(p); c.fillRect(x - dpr, y - dpr, 2 * dpr, 2 * dpr); }
   }
-  const shots = rdShotsList(), live = rd.live && rd.live.path, rings = $("rdRings").checked;
+  const shown = rdShown(), shots = rdShotsList(), live = shown && shown.path, rings = $("rdRings").checked;
   // what the recoil does now: spread (about 19 in 20 land inside) and path
-  if (live && rings && rd.live.sigma) live.forEach((p, i) => { const sg = rd.live.sigma[i]; if (sg && i > 0 && (sg[0] > 0.01 || sg[1] > 0.01)) ellipse(p, 2 * sg[0], 2 * sg[1], "rgba(255,178,36,.28)", 1); });
+  // orange: what the recoil being designed does now (the gun's own until you combine)
+  if (live && rings && shown.sigma) live.forEach((p, i) => { const sg = shown.sigma[i]; if (sg && i > 0 && (sg[0] > 0.01 || sg[1] > 0.01)) ellipse(p, 2 * sg[0], 2 * sg[1], "rgba(255,178,36,.28)", 1); });
   // the targets: a line through them in order, their rings
   poly(shots.map((sh) => (sh.x == null ? null : [sh.x, sh.y])), "rgba(76,195,255,.35)", 1.2);
   if (rd.tool === "line") {
@@ -259,7 +271,7 @@ function rdDrawMotion() {
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.fillStyle = "#0e1116"; c.fillRect(0, 0, W, H);
   $("rdLegend").innerHTML = RD_MO.map((m) => `<button class="rd-chip${rd.moShow[m.k] ? " on" : ""}" data-mo="${m.k}" style="--c:${m.color}">${m.label}</button>`).join("");
-  const tr = rd.live && rd.live.track;
+  const tr = rdShown() && rd.live.track;
   const st = $("rdSettle");
   if (!tr || !tr.length) { st.textContent = ""; return; }
   const t0 = tr[0][0], t1 = tr[tr.length - 1][0], last = rd.live.times && rd.live.times.length ? rd.live.times[rd.live.times.length - 1] : 0;
@@ -306,12 +318,12 @@ function rdChanged() {
 }
 function rdRingInfo() {
   const keys = rdRingKeys();
-  $("rdRingInfo").textContent = keys.length ? `${keys.length} shot${keys.length === 1 ? "" : "s"} with a ring of their own; the rest follow from them. Combine Recoil sets each layer's randomness to match.` : "No rings: Randomness on the Camera tab decides the spread.";
+  $("rdRingInfo").textContent = keys.length ? `${keys.length} shot${keys.length === 1 ? "" : "s"} with a ring; shots without one spread by Randomness (Camera tab).` : "No rings: Randomness on the Camera tab decides the spread.";
 }
 function rdRenderShot() {
   const box = $("rdShotBox"), i = rd.sel, shots = rdShotsList();
   if (i < 0 || i >= shots.length) { box.innerHTML = `<h3>Shot</h3><p class="hint">Pick <b>Move shots</b> and click a shot to edit it: where it should land, how much that counts and how widely it may spread.</p>`; return; }
-  const live = rd.live && rd.live.path[i], sg = rd.live && rd.live.sigma && rd.live.sigma[i];
+  const live = rdShown() && rd.live.path[i], sg = rdShown() && rd.live.sigma && rd.live.sigma[i];
   const t = rd.live && rd.live.times && rd.live.times[i] != null ? `${(rd.live.times[i] * 1000).toFixed(0)} ms` : "";
   const nav = `<span class="rd-nav"><button class="iconbtn tiny" data-rdnav="-1" title="Previous shot ([)" ${i ? "" : "disabled"}>‹</button><button class="iconbtn tiny" data-rdnav="1" title="Next shot (])">›</button></span>`;
   if (i === 0) {
@@ -329,7 +341,7 @@ function rdRenderShot() {
     <div class="field"><label>Spread ring <span class="tip" data-tip="How widely this shot may land around its point: left / right and up / down, in studs (about 19 magazines in 20 land inside). The shots between rings you set follow smoothly.">?</span></label>
       <div class="rd-ring"><span>↔ ±</span><input type="number" step="0.05" min="0" data-rdring="0" value="${rg ? r[0].toFixed(2) : ""}" placeholder="–"><span>↕ ±</span><input type="number" step="0.05" min="0" data-rdring="1" value="${rg ? r[1].toFixed(2) : ""}" placeholder="–"><span class="hint">st</span></div></div>
     <input type="range" class="rd-ringslider" id="rdRingSlider" min="0" max="5" step="0.05" value="${Math.max(r[0], r[1]).toFixed(2)}" title="Both directions together">
-    <p class="hint">${rg ? (rg.key ? "Its own ring." : "Ring from the shots around it.") + (rd.ring[i] ? ` <button class="link" data-rdringclr="1">Remove</button>` : "") : "No ring (set one to shape the spread)."}</p>
+    <p class="hint">${rg ? `Its own ring. <button class="link" data-rdringclr="1">Remove</button>` : "No ring: it spreads by Randomness (Camera tab). Set one to choose."}</p>
     <p class="hint">${sh.src === "manual" ? "Placed by you." : sh.src === "line" ? "From the line." : sh.src === "after" ? "After the line (soft target)." : "Free: no target."}
       ${live ? ` Lands at <b>${live[0].toFixed(2)}, ${live[1].toFixed(2)}</b>${miss != null ? ` — ${miss.toFixed(3)} st from its target` : ""}${sg ? `, spreading ±${(2 * sg[0]).toFixed(2)} ↔ ±${(2 * sg[1]).toFixed(2)} ↕` : ""}.` : ""}</p>
     ${rd.manual[i] ? `<button class="link" data-rdunset="1">Back to the line</button>` : ""}`;
@@ -338,6 +350,7 @@ function rdRenderShot() {
 function rdShowResult() {
   const box = $("rdResult");
   const shots = rdShotsList(), path = rd.live && rd.live.path;
+  if (rd.hideLive) { $("rdResult").innerHTML = `<p class="hint wrap">Cleared. Draw a line, place shots or Copy pattern, then Combine Recoil.</p>`; rdFitButton(); return; }
   const targeted = shots.filter((p) => p.w > 0).length;
   if (!path) { box.innerHTML = `<p class="hint">Working out what the recoil does…</p>`; return; }
   let s2 = 0, sw = 0, worst = -1, wm = -1;
@@ -351,7 +364,9 @@ function rdShowResult() {
   const nx = (rd.recoil[rdCam()].x || []).length, ny = (rd.recoil[rdCam()].y || []).length;
   const fi = rd.fitInfo;
   let html = "";
-  if (!targeted) html += `<p class="hint wrap">No targets yet: draw a line, place shots or Copy pattern.</p>`;
+  if (!fi) {
+    html += `<p class="hint wrap">${targeted ? `${targeted} of ${rd.n - 1} shots targeted. ` : "No targets yet: draw a line, place shots or Copy pattern. "}Orange: the recoil you started from.</p>`;
+  } else if (!targeted) html += `<p class="hint wrap">No targets yet: draw a line, place shots or Copy pattern.</p>`;
   else html += `<p><b>Average miss: ${rms.toFixed(3)} st</b>${worst >= 0 ? ` <span class="hint">· furthest: <button class="link" data-rdgo="${worst}">shot ${worst + 1}</button> (${wm.toFixed(3)} st)</span>` : ""}</p>
     <p class="hint">${targeted} of ${rd.n - 1} shots targeted · camera ${nx} + ${ny} layers</p>`;
   if (rd.fitInfo && rd.fitInfo.stale) html += `<p class="hint warn">Changed since the last Combine Recoil.</p>`;
@@ -423,6 +438,7 @@ function rdSetTab(v) {
 /* ------------------------------------------------------------------ open / sources */
 async function rdLoadSource(src) {
   rd.source = src;
+  rd.hideLive = false;
   let rec;
   if (src === "this:game") rec = await rcBase(rd.weapon);
   else if (src.startsWith("gun:")) rec = await rcBase(src.slice(4));
@@ -443,7 +459,7 @@ async function openDesigner() {
   if (fresh) {
     rd.n = rd.cover = (state.stats && state.stats.magsize) || 30;
     rd.ctrl = []; rd.manual = {}; rd.weight = {}; rd.ring = {}; rd.sel = -1; rd.undo = []; rd.redo = [];
-    rd.source = "this:edited"; rd.live = null; rd.scatter = null;
+    rd.source = "this:edited"; rd.live = null; rd.scatter = null; rd.hideLive = false;
     $("rdDist").value = settings().distance;
     rd.stance = rc.stance;
   }
@@ -464,7 +480,7 @@ function rdHitShot(sx, sy, cv) {
   const dpr = devicePixelRatio || 1, shots = rdShotsList();
   let best = -1, bd = 12 * dpr;
   shots.forEach((sh, i) => {
-    for (const p of [sh.x != null ? [sh.x, sh.y] : null, rd.live && rd.live.path[i]]) {
+    for (const p of [sh.x != null ? [sh.x, sh.y] : null, rdShown() && rd.live.path[i]]) {
       if (!p) continue;
       const [x, y] = rdToScreen(p[0], p[1], cv), d = Math.hypot(x - sx, y - sy);
       if (d < bd) { bd = d; best = i; }
@@ -515,17 +531,18 @@ async function rdRunFit(refit) {
     for (const e of extra[ax]) { locked[ax].push(e.row); newTags[ax].push(e.tag); }
   }
   const keys = rdRingKeys();
-  const spread = keys.length ? shots.map((sh, i) => { const rg = rdRingAt(i); return rg && i > 0 ? [rg.r[0] / 2, rg.r[1] / 2] : null; }) : null;
+  const spread = keys.length ? shots.map((sh, i) => { const rg = rdRingAt(i); return rg ? [rg.r[0] / 2, rg.r[1] / 2] : null; }) : null;
   try {
     const r = await api("/api/recoil/fit", rdSimReq({
       points: shots.map((s) => (s.x == null ? null : [s.x, s.y])), weights: shots.map((s) => s.w),
-      layers: refit ? undefined : rd.layers, springs: refit ? springs : undefined, feel: rd.feel, variance: rd.variance,
+      layers: refit ? undefined : rd.layers, springs: refit ? springs : undefined, feel: rd.feel, variance: rd.variance, smooth: rd.smooth,
       recoil: rd.recoil, locked, spread,
       recovery: { damping: rd.recD, speed: rd.recS, delay: rd.delay, snap: rd.snapOn ? rd.snap : null },
     }), undefined, 180000);
     rd.recoil = r.recoil;
     for (const ax of ["x", "y"]) rd.tags[ax] = [...newTags[ax], ...Array((r.layers[ax].length - newTags[ax].length)).fill("fit")];
     rd.live = { path: r.path, sigma: r.sigma, track: r.track, settle: r.settle, times: r.times };
+    rd.hideLive = false;
     rd.fitInfo = { rms: r.rms, spread: r.spread_fit };
     rd.scatter = null;
     rdRenderLayers(); rdAfterLive();
@@ -572,7 +589,7 @@ function wireDesigner() {
   $("rdLayers").addEventListener("change", () => { rd.layers = $("rdLayers").value === "auto" ? "auto" : +$("rdLayers").value; });
   rd.setTab = seg("rdTabs", (v) => rdSetTab(v));
   rd.setStance = seg("rdStance", async (v) => {
-    rd.stance = v; $("rdApply").textContent = `Use it on this gun (${v === "aim" ? "aimed" : "hip fire"})`;
+    rd.stance = v; rd.hideLive = false; $("rdApply").textContent = `Use it on this gun (${v === "aim" ? "aimed" : "hip fire"})`;
     rd.fitInfo = null; rdSyncTags(); rd.tags = { x: [], y: [] }; rdSyncTags();
     if (rd.tab === "camera") rdRenderLayers();
     if (rd.tab === "parts") rdRenderParts();
@@ -584,6 +601,7 @@ function wireDesigner() {
   rd.setFeel = seg("rdFeel", (v) => { rd.feel = v; });
   const slider = (id, valId, fmt, fn) => { $(id).addEventListener("input", () => { paintRange($(id)); $(valId).textContent = fmt(+$(id).value); fn(+$(id).value); }); paintRange($(id)); };
   slider("rdVar", "rdVarVal", (v) => `${v}%`, (v) => { rd.variance = v / 100; });
+  slider("rdCalm", "rdCalmVal", (v) => `${v}%`, (v) => { rd.smooth = v / 100; });
   slider("rdSnap", "rdSnapVal", (v) => `${v.toFixed(2)} s`, (v) => { rd.snap = v; });
   slider("rdPunch", "rdPunchVal", (v) => v.toFixed(2), (v) => { rd.punch = v; });
   slider("rdShake", "rdShakeVal", (v) => v.toFixed(2), (v) => { rd.shake = v; });
@@ -606,7 +624,41 @@ function wireDesigner() {
   $("rdClose").addEventListener("click", () => closeModal("rdModal"));
   $("rdUndo").addEventListener("click", () => { if (rd.undo.length) { rd.redo.push(rdSnap()); rdRestore(rd.undo.pop()); } });
   $("rdRedo").addEventListener("click", () => { if (rd.redo.length) { rd.undo.push(rdSnap()); rdRestore(rd.redo.pop()); } });
-  $("rdClear").addEventListener("click", () => { rdPush(); rd.ctrl = []; rd.manual = {}; rd.weight = {}; rd.ring = {}; rd.sel = -1; rdChanged(); });
+  $("rdClear").addEventListener("click", async () => {
+    // the pattern, and the camera back to what the design started from (Gun & view edits stay)
+    rdPush();
+    rd.ctrl = []; rd.manual = {}; rd.weight = {}; rd.ring = {}; rd.sel = -1;
+    const src = rd.source === "this:game" ? await rcBase(rd.weapon) : rd.source.startsWith("gun:") ? await rcBase(rd.source.slice(4)) : await rcCurrent(rd.weapon);
+    const g = rdCam();
+    for (const ax of ["x", "y"]) { rd.recoil[g][ax] = clone(src[g][ax] || []); rd.recoil[g + "Recovery"][ax] = clone(src[g + "Recovery"][ax] || { layers: [], delay: 0.1 }); }
+    rd.tags = { x: [], y: [] }; rdSyncTags();
+    rd.fitInfo = null; rd.scatter = null; $("rdSpread").checked = false;
+    rd.hideLive = true;
+    rdRenderLayers(); rdChanged(); rdDrawMotion(); rdLive();
+  });
+  $("rdReset").addEventListener("click", async () => {
+    // everything back to how the designer opens for this gun
+    rdPush();
+    rd.ctrl = []; rd.manual = {}; rd.weight = {}; rd.ring = {}; rd.sel = -1;
+    rd.n = rd.cover = (state.stats && state.stats.magsize) || 30;
+    $("rdShots").value = rd.n; $("rdCover").value = rd.cover;
+    rd.after = "settle"; rd.setAfter("settle");
+    $("rdDist").value = settings().distance;
+    // Camera tab settings
+    Object.assign(rd, { feel: "game", layers: "auto", variance: 0.3, smooth: 0.3, snap: 0.6, snapOn: true, recD: 0.85, recS: 15, delay: 0.1, punch: 0, shake: 0 });
+    rd.setFeel("game"); $("rdLayers").value = "auto";
+    for (const [id, v] of [["rdVar", 30], ["rdCalm", 30], ["rdSnap", 0.6], ["rdPunch", 0], ["rdShake", 0]]) { $(id).value = v; $(id).dispatchEvent(new Event("input")); }
+    $("rdSnapOn").checked = true; $("rdSnap").disabled = false;
+    $("rdRecD").value = 0.85; $("rdRecS").value = 15; $("rdDelay").value = 0.1;
+    // the recoil: every part back to the gun's as it is now
+    rd.source = "this:edited"; $("rdSource").value = rd.source;
+    rd.hideLive = false;
+    await rdLoadSource(rd.source);
+    rd.scatter = null; $("rdSpread").checked = false;
+    rdRenderLayers(); if (rd.tab === "parts") rdRenderParts();
+    rdChanged(); await rdLive(true); rdFitView();
+    toast("Designer reset — Undo brings the pattern and recoil back.", 2500);
+  });
   $("rdMirror").addEventListener("click", () => {
     rdPush();
     const fx = rdFirst()[0];
@@ -625,6 +677,7 @@ function wireDesigner() {
   $("rdFromGun").addEventListener("click", () => {
     if (!rd.live) return;
     rdPush();
+    rd.hideLive = false;
     rd.ctrl = []; rd.weight = {}; rd.manual = {}; rd.ring = {};
     rd.live.path.forEach((p, i) => {
       if (!i) return;
@@ -636,8 +689,12 @@ function wireDesigner() {
     rdChanged(); rdFitView();
   });
   // spread rings for every shot
-  $("rdRingSet").addEventListener("click", () => { const v = Math.max(0, +$("rdRingAll").value || 0); rdPush(); rd.ring = {}; rd.ring[1] = [v, v]; rd.ring[rd.n - 1] = [v, v]; rdChanged(); });
-  $("rdRingGrow").addEventListener("click", () => { const v = Math.max(0, +$("rdRingAll").value || 0); rdPush(); rd.ring = {}; rd.ring[1] = [+(v * 0.2).toFixed(3), +(v * 0.2).toFixed(3)]; rd.ring[rd.n - 1] = [v, v]; rdChanged(); });
+  $("rdRingSet").addEventListener("click", () => { const v = Math.max(0, +$("rdRingAll").value || 0); rdPush(); rd.ring = {}; for (let i = 1; i < rd.n; i++) rd.ring[i] = [v, v]; rdChanged(); });
+  $("rdRingGrow").addEventListener("click", () => {
+    const v = Math.max(0, +$("rdRingAll").value || 0); rdPush(); rd.ring = {};
+    for (let i = 1; i < rd.n; i++) { const r = +(v * (0.2 + 0.8 * Math.sqrt((i - 1) / Math.max(1, rd.n - 2)))).toFixed(3); rd.ring[i] = [r, r]; }
+    rdChanged();
+  });
   $("rdRingClear").addEventListener("click", () => { rdPush(); rd.ring = {}; rdChanged(); });
   $("rdRings").addEventListener("change", () => rdDraw());
   $("rdSpread").addEventListener("change", () => { if ($("rdSpread").checked) rdLive(); else { rd.scatter = null; rdDraw(); } });
@@ -766,6 +823,7 @@ function wireDesigner() {
     rows[+i][+j] = v;
     rdSetRows(ax, rows);
     if (rd.fitInfo) rd.fitInfo.stale = true;
+    rd.hideLive = false;
     rdLive();
   });
   $("rdLayersBox").addEventListener("click", async (e) => {
@@ -782,7 +840,7 @@ function wireDesigner() {
     }
   });
   // gun & view parts
-  const partEdit = () => { rd.partsChanged = true; if (rd.fitInfo) rd.fitInfo.stale = true; rdLive(); };
+  const partEdit = () => { rd.hideLive = false; rd.partsChanged = true; if (rd.fitInfo) rd.fitInfo.stale = true; rdLive(); };
   $("rdParts").addEventListener("change", async (e) => {
     const inp = e.target.closest("[data-rdp]"), dl = e.target.closest("[data-rdpdelay]"), pre = e.target.closest("[data-rdpreset]");
     if (inp) {

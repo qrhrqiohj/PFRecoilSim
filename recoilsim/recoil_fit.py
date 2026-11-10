@@ -48,6 +48,9 @@ from .simulate import SimSettings, simulate
 from .springs import spring_coeffs
 
 SEL_RIDGE = 1e-5  # while choosing layers: keeps pairs of layers from cancelling (big opposite kicks go non-linear)
+FREE_W = 0.03     # free shots: a very light hint (see fit_recoil)
+SMOOTH_W = 0.3     # weight of the in-between / after-the-magazine checks (vs a normal shot)
+KICK_RIDGE = 1e-4  # keeps layers from cancelling each other with huge kicks
 UNIT = 0.01  # kick used to measure a layer's path (small: stays linear, never flies off)
 
 # the springs each feel may use: lists of (damping range, speed range)
@@ -341,11 +344,13 @@ def fit_recoil(gd, req: dict) -> dict:
     spread [[sx, sy] or null, ...] (how widely shot i may land around its point:
     a standard deviation in studs per axis; null = no target);
     layers ("auto" or 1-16 per direction); feel ("game", "smooth", "free");
-    variance (0-1: random kick as a share of the average kick, when no spread
-    targets); recoil (the full table to start from: its other parts are kept);
+    variance (0-1: how random each shot's kick is, as a share of that shot's step
+    along the pattern — the spread target of shots without one); recoil (the full table to start from: its other parts are kept);
     locked ({"x": [[d, s, mean, var, rec d, rec s], ...], "y": [...]}: camera
     layers kept exactly as they are, fitted around); springs ({"x": [[d, s, rec d,
-    rec s], ...], "y": [...]}: keep these springs, fit only the kicks);
+    rec s], ...], "y": [...]}: keep these springs, fit only the kicks); smooth (0-2, default 0.3:
+    how strongly the view is kept on a smooth path between shots and after the
+    last one);
     recovery ({"damping", "speed": the recovery spring new layers start from,
     "delay": seconds without a shot before it takes over, "tune": fine-tune each
     layer's recovery too})."""
@@ -367,6 +372,30 @@ def fit_recoil(gd, req: dict) -> dict:
     run = _Runner(gd, req)
     k = min(k, run.n)
     pts, weights = pts[:k], weights[:k]
+    w_user = weights.copy()  # what the user asked for (the result is measured on these)
+    # Free shots get a very light hint so the springs can't run away with them:
+    # between two shots with a place, the straight line between them; after the
+    # last one, carrying on in its direction, slowing down. (Light enough that
+    # anything else you asked for wins.)
+    on_idx = [i for i in range(1, k) if weights[i] > 0]
+    if on_idx:
+        wl = FREE_W * float(weights[on_idx].mean())
+        last = on_idx[-1]
+        prev = [i for i in on_idx if i < last]
+        step = (pts[last] - pts[prev[-1]]) / (last - prev[-1]) if prev else np.zeros(2)
+        for i in range(1, k):
+            if weights[i] > 0:
+                continue
+            a = max([j for j in on_idx if j < i], default=None)
+            b = min([j for j in on_idx if j > i], default=None)
+            if a is not None and b is not None:
+                pts[i] = pts[a] + (pts[b] - pts[a]) * (i - a) / (b - a)
+            elif a is not None:
+                j = i - last
+                pts[i] = pts[last] + step * (1 - 0.85 ** j) / (1 - 0.85)
+            else:
+                continue
+            weights[i] = wl
     w = weights
     feel = req.get("feel") if req.get("feel") in FEELS else "game"
     variance = min(1.0, max(0.0, float(req.get("variance") or 0)))
@@ -405,9 +434,39 @@ def fit_recoil(gd, req: dict) -> dict:
     # shot — extra "shots" after the magazine that should land on the aim point
     snap = rcfg.get("snap", 0.6)
     snap = None if snap in (None, False, "off") else max(0.1, float(snap))
-    extra_t = (float(imp_t[-1]) + snap + np.linspace(0.0, 0.8, 6)) if snap else np.zeros(0)
+    wm = float(w[w > 0].mean())
+    smooth = SMOOTH_W if req.get("smooth") is None else max(0.0, min(2.0, float(req["smooth"])))
+    # Between the shots the fit can't see the view, so springs could swing wildly
+    # there and still land every shot (jittery, "spazzing" recoil). Extra checks
+    # keep the motion between two targeted shots near the straight line between
+    # them, and the return after the last shot a smooth glide to the centre.
+    mid_t, mid_y, mid_w = [], [], []
+    wl_ = np.where(np.arange(k) == 0, np.roll(w, -1), w)  # shot 1 counts like shot 2 here
+    for i in range(k - 1):
+        ww_ = min(wl_[i], wl_[i + 1])
+        if ww_ <= 0 or samp_t[i + 1] <= samp_t[i]:
+            continue
+        for f in (1 / 3, 2 / 3):
+            mid_t.append(samp_t[i] + f * (samp_t[i + 1] - samp_t[i]))
+            mid_y.append(resid[i] + f * (resid[i + 1] - resid[i]))
+            mid_w.append(smooth * ww_)
+    post_t, post_y, post_w = [], [], []
+    if snap:
+        t_end = float(samp_t[-1])
+        for j in range(1, 9) if w[-1] > 0 else ():  # (the last shot is free: no known start for the glide)
+            f = j / 8.0
+            post_t.append(t_end + f * snap)
+            post_y.append(resid[-1] * (1 - f * f * (3 - 2 * f)))  # smooth glide to the centre
+            post_w.append(smooth * wm)
+        for t in float(imp_t[-1]) + snap + np.linspace(0.0, 0.8, 6):
+            post_t.append(t); post_y.append(np.zeros(2)); post_w.append(2.0 * wm)
+    extra_t = np.array(mid_t + post_t, float)
+    extra_y = np.array(mid_y + post_y, float).reshape(-1, 2)
+    extra_w = np.array(mid_w + post_w, float)
+    # the other parts' contribution at the in-between times isn't known exactly:
+    # the targets above are relative to the shots' (base already removed)
     ext_t = np.concatenate([samp_t, extra_t])
-    w_ext = np.concatenate([w, np.full(len(extra_t), 2.0 * float(w[w > 0].mean()))])
+    w_ext = np.concatenate([w, extra_w])
 
     def profile(sp):
         """spring position at every shot (and the snap-back checks) per unit kick at each shot"""
@@ -472,7 +531,7 @@ def fit_recoil(gd, req: dict) -> dict:
         chosen = {}
         iters = int(req.get("polish") or 150)
         for ax, col in (("x", 1), ("y", 0)):
-            y = np.concatenate([resid[:, col], np.zeros(len(extra_t))])
+            y = np.concatenate([resid[:, col], extra_y[:, col]])
             cur, best_err = [], set_err([], ax, y)
             if math.sqrt(best_err) < tol and want == "auto":
                 chosen[ax] = []
@@ -542,14 +601,30 @@ def fit_recoil(gd, req: dict) -> dict:
                     i += 1
             return out
 
-        def err_of(pc):
-            e = (pc - pts).reshape(-1)
-            v = float(np.sum(ww * e * e))
-            return v if math.isfinite(v) else 1e30
         nk = sum(len(v) for v in springs.values())
+        # the in-between / after-the-magazine checks (exact spring maths, linear in the kicks)
+        E = np.zeros((2 * len(extra_t), nk))
+        j = 0
+        for ax, col in (("x", 1), ("y", 0)):
+            for sp in springs[ax]:
+                E[col::2, j] = layer_col(sp, ax)[k:]
+                j += 1
+        Ey = extra_y.reshape(-1)
+        Ew = np.repeat(extra_w, 2)
+
+        def err_of(pc, kv):
+            e = (pc - pts).reshape(-1)
+            x = E @ kv - Ey if nk else -Ey
+            v = float(np.sum(ww * e * e) + np.sum(Ew * x * x))
+            return v if math.isfinite(v) else 1e30
+
+        def step(J, r_shots, kv, ridge):
+            A = np.concatenate([J, E], axis=0)
+            b = np.concatenate([r_shots, Ey - E @ kv])
+            return _wls(A, b, np.concatenate([ww, Ew]), ridge=ridge)[0]
         kicks = np.zeros(nk)
         pc = run.path(with_rows(rows_of(kicks)))[:k]
-        err = err_of(pc)
+        err = err_of(pc, kicks)
         if not nk:
             return rows_of(kicks), err
         basis = []
@@ -557,9 +632,9 @@ def fit_recoil(gd, req: dict) -> dict:
             kv = np.zeros(nk)
             kv[j] = UNIT
             basis.append(((run.path(with_rows(rows_of(kv)))[:k] - pc) / UNIT).reshape(-1))
-        k1, _ = _wls(np.stack(basis, axis=1), (pts - pc).reshape(-1), ww)
+        k1 = step(np.stack(basis, axis=1), (pts - pc).reshape(-1), kicks, KICK_RIDGE)
         p1 = run.path(with_rows(rows_of(k1)))[:k]
-        e1 = err_of(p1)
+        e1 = err_of(p1, k1)
         if e1 < err:
             kicks, pc, err = k1, p1, e1
         for _ in range(4):
@@ -569,10 +644,10 @@ def fit_recoil(gd, req: dict) -> dict:
                 kv = kicks.copy()
                 kv[j] += h
                 J.append(((run.path(with_rows(rows_of(kv)))[:k] - pc) / h).reshape(-1))
-            delta, _ = _wls(np.stack(J, axis=1), (pts - pc).reshape(-1), ww, ridge=1e-6)
+            delta = step(np.stack(J, axis=1), (pts - pc).reshape(-1), kicks, 1e-6)
             nkv = kicks + delta
             npc = run.path(with_rows(rows_of(nkv)))[:k]
-            ne = err_of(npc)
+            ne = err_of(npc, nkv)
             if ne >= err * 0.999:
                 break
             kicks, pc, err = nkv, npc, ne
@@ -600,14 +675,32 @@ def fit_recoil(gd, req: dict) -> dict:
     # variances from per-shot spread targets
     spread_t = req.get("spread")
     spread_info = None
+    if variance > 0:
+        # Shots without a ring: "randomness" is a share of each shot's own step. Each shot's
+        # kick varies by that share, and the variations add up shot after shot
+        # (like the game's guns: an AK-47 at 30 % ends up spreading about the
+        # same as its own). Asking for that spread per shot keeps layers that
+        # cancel each other from piling up randomness (setting each layer's
+        # variance as a share of its own kick would).
+        given = list(spread_t or [])
+        spread_t, acc, prev = [None] * k, 0.0, 0
+        for i in range(1, k):
+            if w[i] > 0:
+                gap = i - prev
+                d = float(np.hypot(*(pts[i] - pts[prev]))) / gap
+                acc += d * d * gap
+                prev = i
+            sd = variance * math.sqrt(acc)
+            # a ring the user set on this shot wins
+            spread_t[i] = given[i] if i < len(given) and given[i] is not None else [sd, sd]
     if spread_t and any(x is not None for x in spread_t[:run.n]):
         rows, spread_info = _fit_spread(run, rows, locked, spread_t, with_rows, [c for c in cands if c[2:] == rec0], profile, scale)
 
     result = with_rows(rows)
     full = run.path(result)
     miss = np.hypot(*(full[:k] - pts).T)
-    on = w > 0
-    rms = float(np.sqrt(np.average(miss[on] ** 2, weights=w[on])))
+    on = w_user > 0
+    rms = float(np.sqrt(np.average(miss[on] ** 2, weights=w_user[on])))
     sig = run.sigma(result)
     track, settle = run.track(result)
     return {"recoil": sanitize(result), "group": g, "path": full.tolist(), "times": run.times, "miss": miss.tolist(),
