@@ -749,4 +749,14 @@ label.check { display: flex; align-items: center; gap: 6px; font-size: 12px; col
 .rd-apply .rd-result p { margin: 2px 0; }
 #rdShotBox.flash { animation: rdFlash .8s ease-out; }
 @keyframes rdFlash { 0% { background: rgba(76, 195, 255, .16); } 100% { background: transparent; } }
-#rdShotBox { scroll-margin-bottom: 190px; scroll-margin-top: 50px; }
+#rdShotBox { scroll-margin: 8px 0; }
+/* designer side panel: tabs on top, the open tab scrolls, the buttons stay at the bottom */
+.rd-side { overflow: hidden !important; display: flex; flex-direction: column; }
+.rd-side > .rd-tabs { flex: none; }
+.rd-side > .rd-pane { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin-right: -8px; padding-right: 8px; }
+.rd-side > .rd-apply { flex: none; position: static; margin-top: auto; bottom: auto; padding-bottom: 0; }
+.rd-make { font-size: 15px; font-weight: 700; padding: 11px 12px !important; }
+/* fixed height so the buttons never move */
+.rd-apply .rd-result { height: 54px; overflow: hidden; font-size: 12px; }
+.rd-apply .rd-result p { margin: 0 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-apply .rd-result p.wrap { white-space: normal; }

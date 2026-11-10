@@ -3,7 +3,7 @@
    The design is a full recoil table (rd.recoil: camera, gun kick, view shake,
    each with its recovery springs) plus a pattern: one target per shot of the
    magazine — where it should land, how much that counts, and how widely it may
-   spread (a ring). "Make recoil" fits the camera's pitch / yaw layers to the
+   spread (a ring). "Combine Recoil" fits the camera's pitch / yaw layers to the
    pattern (the server's recoil_fit.py); the Gun & view tab edits the other
    parts directly. Whatever the working table does is always shown: where each
    shot lands (orange), its spread, and the motion over time. */
@@ -11,7 +11,7 @@
 
 const RD_W = { free: 0, soft: 0.35, normal: 1, strong: 4, lock: 25 };
 const RD_PARTS = [
-  { g: "Rotation", label: "Rotational", hint: "Turns the gun in front of the camera. Bullets follow it, so it changes the pattern too (Make recoil works around it).", axes: { x: "pitch (up / down)", y: "yaw (left / right)", z: "roll" } },
+  { g: "Rotation", label: "Rotational", hint: "Turns the gun in front of the camera. Bullets follow it, so it changes the pattern too (Combine Recoil works around it).", axes: { x: "pitch (up / down)", y: "yaw (left / right)", z: "roll" } },
   { g: "Translation", label: "Translational", hint: "Moves the gun in front of the camera — mostly the visible kick back. Barely moves the bullets.", axes: { x: "sideways", y: "up / down", z: "back / forward" } },
   { g: "CameraHead", label: "Head Camera", hint: "Shakes what you see only; the bullets don't follow it.", axes: { x: "pitch", y: "yaw", z: "roll" } },
   { g: "CameraBody", label: "Camera roll", hint: "Tilts the view on each shot (the camera's pitch and yaw are on the Camera tab).", axes: { z: "roll" } },
@@ -306,7 +306,7 @@ function rdChanged() {
 }
 function rdRingInfo() {
   const keys = rdRingKeys();
-  $("rdRingInfo").textContent = keys.length ? `${keys.length} shot${keys.length === 1 ? "" : "s"} with a ring of their own; the rest follow from them. Make recoil sets each layer's randomness to match.` : "No rings: Randomness on the Camera tab decides the spread.";
+  $("rdRingInfo").textContent = keys.length ? `${keys.length} shot${keys.length === 1 ? "" : "s"} with a ring of their own; the rest follow from them. Combine Recoil sets each layer's randomness to match.` : "No rings: Randomness on the Camera tab decides the spread.";
 }
 function rdRenderShot() {
   const box = $("rdShotBox"), i = rd.sel, shots = rdShotsList();
@@ -351,22 +351,19 @@ function rdShowResult() {
   const nx = (rd.recoil[rdCam()].x || []).length, ny = (rd.recoil[rdCam()].y || []).length;
   const fi = rd.fitInfo;
   let html = "";
-  if (!targeted) html += `<p class="hint">No shots have a place to land yet: draw a line, place shots or Copy pattern.</p>`;
-  else html += `<p><b>Average miss: ${rms.toFixed(3)} st</b> <span class="hint">· ${targeted} of ${rd.n - 1} shots targeted · camera ${nx} + ${ny} layers</span></p>
-    ${worst >= 0 ? `<p class="hint">Furthest off: <button class="link" data-rdgo="${worst}">shot ${worst + 1}</button> (${wm.toFixed(3)} st).</p>` : ""}`;
+  if (!targeted) html += `<p class="hint wrap">No targets yet: draw a line, place shots or Copy pattern.</p>`;
+  else html += `<p><b>Average miss: ${rms.toFixed(3)} st</b>${worst >= 0 ? ` <span class="hint">· furthest: <button class="link" data-rdgo="${worst}">shot ${worst + 1}</button> (${wm.toFixed(3)} st)</span>` : ""}</p>
+    <p class="hint">${targeted} of ${rd.n - 1} shots targeted · camera ${nx} + ${ny} layers</p>`;
+  if (rd.fitInfo && rd.fitInfo.stale) html += `<p class="hint warn">Changed since the last Combine Recoil.</p>`;
   box.innerHTML = html;
   rdFitButton();
 }
-/* the Make recoil button says whether the result is up to date */
+/* the Combine Recoil button says whether the result is up to date */
 function rdFitButton() {
-  const b = $("rdFit"), sub = $("rdFitSub"), fi = rd.fitInfo;
+  const b = $("rdFit"), fi = rd.fitInfo;
   if (!b) return;
-  const due = !fi || fi.stale;
-  b.classList.toggle("due", due && !rd.busy);
-  sub.textContent = rd.busy ? "Working it out…"
-    : !fi ? "Fit everything into the final recoil (Ctrl+Enter)"
-    : fi.stale ? "Something changed — make it again (Ctrl+Enter)"
-    : "Up to date · make it again after changes";
+  b.classList.toggle("due", (!fi || fi.stale) && !rd.busy);
+  b.textContent = rd.busy ? "Combining…" : "Combine Recoil";
 }
 function rdRenderLayers() {
   const box = $("rdLayersBox");
@@ -377,13 +374,13 @@ function rdRenderLayers() {
   const row = (ax, r, i) => {
     const tag = rd.tags[ax][i];
     const lock = tag === "fit" ? "" : "checked";
-    return `<tr class="${tag !== "fit" ? "locked" : ""}"${tagLabel[tag] ? ` title="The ${tagLabel[tag]} layer (from its slider; Make recoil keeps it)"` : ""}><td class="rc-n">${tagLabel[tag] ? tagLabel[tag][0].toUpperCase() : i + 1}</td>${r.map((v, j) => `<td><input type="number" step="any" data-rdl="${ax}|${i}|${j}" value="${+(+v).toFixed(4)}"></td>`).join("")}
-      <td><label class="rd-lock" title="${tagLabel[tag] ? `The ${tagLabel[tag]} layer (from the slider)` : "Lock: Make recoil keeps this layer as it is and fits the others around it"}"><input type="checkbox" data-rdlock="${ax}|${i}" ${lock} ${tagLabel[tag] ? "disabled" : ""}></label></td>
+    return `<tr class="${tag !== "fit" ? "locked" : ""}"${tagLabel[tag] ? ` title="The ${tagLabel[tag]} layer (from its slider; Combine Recoil keeps it)"` : ""}><td class="rc-n">${tagLabel[tag] ? tagLabel[tag][0].toUpperCase() : i + 1}</td>${r.map((v, j) => `<td><input type="number" step="any" data-rdl="${ax}|${i}|${j}" value="${+(+v).toFixed(4)}"></td>`).join("")}
+      <td><label class="rd-lock" title="${tagLabel[tag] ? `The ${tagLabel[tag]} layer (from the slider)` : "Lock: Combine Recoil keeps this layer as it is and fits the others around it"}"><input type="checkbox" data-rdlock="${ax}|${i}" ${lock} ${tagLabel[tag] ? "disabled" : ""}></label></td>
       <td><button class="iconbtn tiny" data-rdldel="${ax}|${i}" title="Remove this layer">×</button></td></tr>`;
   };
   const g = rdCam();
   box.innerHTML = `<h3>Camera layers <span class="hint">· edits show live</span></h3>
-    <table class="rc-grid rd-grid"><thead><tr><th></th><th title="1 = no overshoot; lower bounces">Damp</th><th title="How fast the spring moves">Speed</th><th title="Average kick per shot">Kick</th><th title="Random part of the kick (kick ± this)">Var</th><th title="Recovery spring: damping once no shot has come for the delay">Rec d</th><th title="Recovery spring: speed">Rec s</th><th title="Locked layers are kept by Make recoil"><svg class="ic tiny-ic"><use href="#i-lock"/></svg></th><th></th></tr></thead><tbody>
+    <table class="rc-grid rd-grid"><thead><tr><th></th><th title="1 = no overshoot; lower bounces">Damp</th><th title="How fast the spring moves">Speed</th><th title="Average kick per shot">Kick</th><th title="Random part of the kick (kick ± this)">Var</th><th title="Recovery spring: damping once no shot has come for the delay">Rec d</th><th title="Recovery spring: speed">Rec s</th><th title="Locked layers are kept by Combine Recoil"><svg class="ic tiny-ic"><use href="#i-lock"/></svg></th><th></th></tr></thead><tbody>
     ${["x", "y"].map((ax) => `<tr class="rc-ax"><td colspan="9"><b>${ax}</b> <span class="hint">${ax === "x" ? "pitch: up / down" : "yaw: left / right"} · delay ${(rd.recoil[g + "Recovery"][ax] || {}).delay ?? rd.delay}s</span><button class="link" data-rdladd="${ax}">+ layer</button></td></tr>${rdRows(ax).map((r, i) => row(ax, r, i)).join("")}`).join("")}
     </tbody></table>
     <div class="rd-row"><button class="btn small" id="rdRefit" title="Keep these springs (damping, speed, recovery) and work out the best kicks again">Re-fit kicks</button><button class="btn small" id="rdFromGunCam" title="Put the gun's own camera layers back (all locked), to build on them">Gun's camera layers</button></div>`;

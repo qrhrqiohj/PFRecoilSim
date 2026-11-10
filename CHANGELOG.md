@@ -669,3 +669,14 @@ README brought up to date with the code:
   selects the shot, switches to the Pattern tab and scrolls its panel into view
   (it flashes briefly). In *Place shots*, clicking a shot you already placed
   selects it instead of placing another one on top.
+
+## Batch 30
+
+- *Make recoil* is now **Combine Recoil**.
+- The button, its result and *Use it* / *Test fire* are locked to the bottom
+  of the designer's side panel on every tab: the open tab scrolls above them,
+  and the result area has a fixed height, so nothing moves when the tab,
+  the selected shot or the result changes.
+- The line of small text inside the button is gone. The button still pulses
+  while the result is out of date, and the result area says "Changed since the
+  last Combine Recoil". Ctrl+Enter still works.

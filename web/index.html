@@ -406,7 +406,7 @@
           </section>
           <section class="rd-sec" id="rdShotBox"></section>
           <section class="rd-sec">
-            <h3>Spread rings <span class="tip" data-tip="A ring around a shot says how widely it may land around its point (about 19 magazines in 20 land inside). Set rings on a few shots — the ones between follow smoothly — and Make recoil works out each layer's randomness to match. With no rings, Randomness (Camera tab) is used.">?</span></h3>
+            <h3>Spread rings <span class="tip" data-tip="A ring around a shot says how widely it may land around its point (about 19 magazines in 20 land inside). Set rings on a few shots — the ones between follow smoothly — and Combine Recoil works out each layer's randomness to match. With no rings, Randomness (Camera tab) is used.">?</span></h3>
             <div class="rd-row"><span class="hint">Every shot ±</span><span class="numbox small"><input id="rdRingAll" type="number" min="0" max="20" step="0.05" value="0.5"><i>st</i></span><button class="btn small" id="rdRingSet">Set</button><button class="btn small" id="rdRingGrow" title="Small at the start, growing to this size at the last shot">Growing</button><button class="link" id="rdRingClear">Clear</button></div>
             <p class="hint" id="rdRingInfo"></p>
           </section>
@@ -433,7 +433,7 @@
         </div>
         <div class="rd-pane hidden" data-rdpane="parts"><div id="rdParts"></div></div>
         <section class="rd-apply">
-          <button class="btn primary rd-make" id="rdFit" title="Builds the final recoil: fits the camera to your pattern and spread rings, with the Camera settings and the Gun &amp; view parts (Ctrl+Enter)"><b>Make recoil</b><span id="rdFitSub">Fit everything into the final recoil</span></button>
+          <button class="btn primary rd-make" id="rdFit" title="Builds the final recoil: fits the camera to your pattern and spread rings, with the Camera settings and the Gun &amp; view parts (Ctrl+Enter)">Combine Recoil</button>
           <div class="rd-result" id="rdResult"></div>
           <div class="rd-row"><button class="btn" id="rdApply" title="Replaces this stance's recoil (camera, gun kick and view shake, with their recovery) in the Recoil tab, where you can still edit, export or reset it">Use it on this gun (aimed)</button><button class="btn" id="rdTest" title="Fire a magazine on the range with this design (your gun's recoil comes back after)">Test fire</button></div>
         </section>

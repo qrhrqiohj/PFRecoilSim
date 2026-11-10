@@ -221,13 +221,13 @@ lands and spreads. Rings set on some shots carry over smoothly to the shots
 between them; *Spread rings* sets one size for all, or one that grows through
 the magazine.
 
-**Make recoil** — the big button at the bottom of the side panel, on every tab
+**Combine Recoil** — the big button at the bottom of the side panel, on every tab
 (or Ctrl+Enter) — builds the final recoil: it fits the camera's pitch / yaw
 layers to the pattern and spread rings, with the Camera settings and the Gun &
 view parts, in a second or two. It pulses while the result is out of date
 (nothing made yet, or something changed since).
 
-**Camera tab** — how Make recoil builds the camera:
+**Camera tab** — how Combine Recoil builds the camera:
 
 * **Feel**: *Game-like* (like the game's guns: fast springs may bounce a little,
   slow ones never do — no floaty swinging), *Smooth* (nothing bounces) or
@@ -246,7 +246,7 @@ view parts, in a second or two. It pulses while the result is out of date
 
 The **Camera layers** table lists every layer — damping, speed, kick,
 variance, recovery damping and speed — editable, with the picture updating
-live. **Lock** a layer to keep it through the next Make recoil; *Re-fit kicks*
+live. **Lock** a layer to keep it through the next Combine Recoil; *Re-fit kicks*
 keeps the springs and solves only the kicks; *Gun's camera layers* puts the
 gun's own back (locked) to build on.
 
@@ -255,7 +255,7 @@ gun's own back (locked) to build on.
 gun, mostly the kick back), **Head Camera** (view shake only) and **Camera
 roll**. Each axis has its layers with recovery springs and its delay;
 presets (None / Light / Medium / Heavy / Snappy / Bouncy), *This gun's own*,
-or copy the part from any gun. Changes show live; Make recoil again to land the
+or copy the part from any gun. Changes show live; Combine Recoil again to land the
 pattern with them.
 
 **Use it on this gun** puts the design (camera, gun kick, view shake and all
