@@ -8,6 +8,11 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<!-- start-up screen: fades out once the 3D range has drawn the gun -->
+<div id="boot" class="boot" style="position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:#0d0f13"><div class="boot-card">
+  <svg viewBox="0 0 24 24" class="boot-logo" width="54" height="54"><circle cx="12" cy="12" r="8" fill="none" stroke="#ffb224" stroke-width="2.4"/><circle cx="12" cy="12" r="2.2" fill="#ffb224"/></svg>
+  <h1>RecoilSim</h1><p id="bootMsg">Starting…</p><div class="boot-bar"><i></i></div>
+</div></div>
 <!-- icon set -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
@@ -97,6 +102,7 @@
         <label for="comp">Recoil control <span class="tip" data-tip="How much of the average recoil climb the shooter pulls against. 0% leaves the gun alone; 100% is a player who has perfectly learned the pattern, so only random spread is left.">?</span></label><span class="val" id="compVal">0%</span>
         <input id="comp" type="range" min="0" max="100" step="5" value="0">
       </div>
+        <div class="field"><label>Input <span class="tip" data-tip="Pure controller input: the game halves camera recoil (the view kick, which the gun and bullets follow). Gun recoil and spread are the same.">?</span></label><div class="seg" id="inputSeg"><button data-v="kbm" class="on">Mouse &amp; KB</button><button data-v="pad">Controller</button></div></div>
         <div class="field"><label for="shots">Shots per mag</label><input id="shots" type="number" min="1" max="500" placeholder="Full mag"></div>
         <div class="field" id="triggerRow"><label for="triggerRpm">Click rate <span class="tip" data-tip="Trigger pulls per minute for semi / burst modes. Leave empty for the fastest clicking the gun allows.">?</span></label><input id="triggerRpm" type="number" min="30" max="3000" placeholder="Fastest"></div>
         <div class="field"><label for="health">Enemy health</label><span class="numbox unitbox"><input id="health" type="number" value="100" min="1" max="1000"><i>hp</i></span></div>
@@ -111,7 +117,7 @@
 <!-- ============================ RIGHT: ANALYSIS ============================ -->
 <aside class="panel right" id="rightPanel">
   <div class="tabs" id="rightTabs">
-    <button data-tab="pattern" class="on">Pattern</button><button data-tab="stats">Gun stats</button><button data-tab="about" title="The gun's in-game description">Description</button>
+    <button data-tab="pattern" class="on">Pattern</button><button data-tab="stats">Gun stats</button><button data-tab="recoil" title="The gun's recoil values: view, edit, export, or design your own">Recoil</button><button data-tab="about" title="The gun's in-game description">Description</button>
     <span class="spacer"></span>
     <button class="panel-hide inline" data-collapse="rightPanel" title="Hide panel (])"><svg class="ic"><use href="#i-panelr"/></svg></button>
   </div>
@@ -148,6 +154,24 @@
         <div id="snapList" class="snaplist"></div>
         <div id="compare"></div>
       </div>
+    </section>
+
+    <section data-pane="recoil" class="pane">
+      <div class="rc-head">
+        <div class="rc-title"><b id="rcGun">—</b><span class="rc-state" id="rcState"></span></div>
+        <div class="rc-acts">
+          <button class="btn small primary" id="rcDesign" title="Draw where the shots should land and let RecoilSim work out the recoil">Design…</button>
+          <button class="btn small" id="rcExport" title="Copy or save the recoil in the game's format">Export</button>
+          <button class="btn small" id="rcImport" title="Paste recoil in the game's format">Import</button>
+          <button class="btn small" id="rcReset" title="Back to the game's recoil for this gun">Reset</button>
+          <button class="btn small" id="rcBlank" title="Start from nothing: every value 0 and one layer per axis (aimed and hip fire)">Blank</button>
+        </div>
+      </div>
+      <p class="hint">The gun's own recoil, before attachments (they still apply on top, as in game). Edits are used everywhere: the range, the pattern, the finder and the export.</p>
+      <div class="rc-segs"><div class="seg mini" id="rcStance"><button data-v="aim" class="on">Aimed</button><button data-v="hip">Hip fire</button></div>
+        <div class="seg mini" id="rcGroup"><button data-v="CameraBody" class="on">Camera</button><button data-v="Rotation">Rotational</button><button data-v="Translation">Translational</button><button data-v="CameraHead">Head Camera</button></div></div>
+      <p class="hint" id="rcGroupHint"></p>
+      <div id="rcTable" class="rc-table"></div>
     </section>
 
     <section data-pane="about" class="pane">
@@ -194,7 +218,7 @@
 </div>
 <div class="popover menu hidden" id="prefsPop">
   <h3>Display</h3>
-  <div class="field"><label for="pFov">Field of view</label><div class="rangefield"><input id="pFov" type="range" min="50" max="100" step="1"><span class="val" id="pFovVal"></span></div></div>
+  <div class="field"><label for="pFov">Field of view</label><div class="rangefield"><input id="pFov" type="range" min="60" max="120" step="1"><span class="val" id="pFovVal"></span></div></div>
   <div class="field"><label for="pGhost">Gun when aimed</label><div class="rangefield"><input id="pGhost" type="range" min="0" max="100" step="5"><span class="val" id="pGhostVal"></span></div></div>
   <div class="field"><label>Tracers</label><label class="switch"><input id="pTracers" type="checkbox"><span></span></label></div>
   <div class="field"><label>Range markers</label><label class="switch"><input id="pMarkers" type="checkbox"><span></span></label></div>
@@ -244,7 +268,7 @@
             <select id="oneshotChance"><option value="50">50% of shots</option><option value="80" selected>80% of shots</option><option value="95">95% of shots</option></select></div>
         </div>
         <div class="group">
-          <div class="group-head"><h2>Scenario</h2><button class="btn small" id="optSync" title="Copy range, aim point, stance, sight, fire mode, recoil control, health and FPS from the Setup panel">Copy from range</button></div>
+          <div class="group-head"><h2>Scenario</h2><button class="btn small" id="optSync" title="Copy range, aim point, stance, sight, fire mode, recoil control, input, shots per mag, click rate, health and FPS from the Setup panel">Copy from range</button></div>
           <p class="hint">Used only by this search — it doesn't change the range.</p>
           <div class="field"><label for="oDistance">Range</label><span class="numbox fpsbox"><input id="oDistance" type="number" min="1" max="2000" step="any" title="Type any range, or pick a common one with the arrow"><i>st</i><button type="button" class="fps-dd" tabindex="-1" title="Common ranges" data-presets="10,25,50,75,100,150,200,300,500" data-unit="st"><svg class="ic"><use href="#i-chev"/></svg></button></span></div>
           <div class="field"><label for="oAimPoint">Aim at</label><select id="oAimPoint"></select></div>
@@ -253,6 +277,9 @@
           <div class="field"><label for="oFiremode">Fire mode</label><select id="oFiremode"></select></div>
           <div class="field stack"><label for="optComp">Recoil control <span class="tip" data-tip="How well the shooter pulls against the average recoil pattern during this search. 100% = perfectly learned, so only random spread is left; 0% = gun left alone.">?</span></label><span class="val" id="optCompVal">100%</span>
             <input id="optComp" type="range" min="0" max="100" step="5" value="100"></div>
+          <div class="field"><label>Input <span class="tip" data-tip="Pure controller input: the game halves camera recoil (the view kick, which the gun and bullets follow). Gun recoil and spread are the same.">?</span></label><div class="seg" id="oInputSeg"><button data-v="kbm" class="on">Mouse &amp; KB</button><button data-v="pad">Controller</button></div></div>
+          <div class="field"><label for="oShots">Shots / mag <span class="tip" data-tip="Empty: every setup fires the bare gun's magazine (damage goals: each setup's own). A number: every setup fires that many.">?</span></label><input id="oShots" type="number" min="1" max="500" placeholder="Full mag"></div>
+          <div class="field"><label for="oTrigger">Click rate <span class="tip" data-tip="Trigger pulls per minute for semi / burst modes. Empty: the fastest clicking the gun allows.">?</span></label><input id="oTrigger" type="number" min="30" max="3000" placeholder="Fastest"></div>
           <div class="field"><label for="oHealth">Enemy health</label><span class="numbox unitbox"><input id="oHealth" type="number" min="1" max="1000"><i>hp</i></span></div>
           <div class="field"><label for="oFps">Game FPS</label><span class="numbox fpsbox"><input id="oFps" type="number" min="1" max="1000" step="any" value="60" title="Type any frame rate, or pick a common one with the arrow"><i>fps</i><button type="button" class="fps-dd" tabindex="-1" title="Common frame rates"><svg class="ic"><use href="#i-chev"/></svg></button></span></div>
           <div class="field"><label>Bullet drop <span class="tip" data-tip="Off (recommended): you aim for drop at this range, so drop never counts as recoil. On: bullets drop below where you aim, which favours fast bullets.">?</span></label><label class="switch"><input id="oDrop" type="checkbox"><span></span></label></div>
@@ -262,6 +289,7 @@
           <div class="field"><label for="optDepth">Depth</label><select id="optDepth"><option value="thorough">Thorough</option><option value="standard">Standard</option><option value="quick">Quick</option></select></div>
           <div class="field"><label for="optTop">Setups listed</label><div class="countpick"><select id="optTop"><option value="5">5</option><option value="10" selected>10</option><option value="20">20</option><option value="50">50</option><option value="0">All</option><option value="custom">Custom…</option></select><input id="optTopN" type="number" min="1" max="2000" class="hidden" title="How many setups to list"></div></div>
           <p class="hint" id="optTopHint"></p>
+          <div class="field tiefield"><label>Tie-breakers <span class="tip" data-tip="What decides between setups that are equal on the goal (for First STK goals: the same range). Default keeps the built-in order; Custom lets you pick and order your own. Shared with the export.">?</span></label><div class="tiebox-host"></div></div>
         </div>
       </aside>
       <section class="opt-main">
@@ -312,12 +340,109 @@
 <div class="modal hidden" id="defModal">
   <div class="dialog wide">
     <h1>Default exclusions</h1>
-    <p>Attachments every search leaves out by default: the Best setup finder (for guns whose list you haven't changed) and the every-gun export. Red = excluded; click to toggle. Kept on this computer.</p>
+    <p>Attachments every search leaves out by default: the Best setup finder (for guns whose list you haven't changed) and the every-gun export. <b>Click</b> an attachment to exclude it on every gun (red). <b>Right-click</b> it to pick the guns to exclude it on (orange = some guns only). Kept on this computer.</p>
     <div class="exedit-head"><div class="seg mini" id="defSlots"></div><input id="defSearch" placeholder="Filter…"></div>
     <div class="chips" id="defChips"></div>
     <div class="dialog-actions"><span class="hint" id="defCount"></span><span class="spacer"></span><button class="btn" id="defBuiltin">Restore built-in list</button><button class="btn primary" id="defDone">Done</button></div>
   </div>
 </div>
+
+<div class="modal hidden" id="rcTextModal">
+  <div class="dialog wide">
+    <h1 id="rcTextTitle">Recoil</h1>
+    <p class="hint" id="rcTextHint"></p>
+    <textarea id="rcText" class="rc-text" spellcheck="false"></textarea>
+    <div class="dialog-actions"><span class="hint error" id="rcTextErr"></span><span class="spacer"></span>
+      <button class="btn" id="rcTextCopy">Copy</button><button class="btn" id="rcTextSave">Save .lua</button>
+      <button class="btn primary" id="rcTextApply">Apply</button><button class="btn" id="rcTextClose">Close</button></div>
+  </div>
+</div>
+
+<div class="modal hidden" id="rdModal">
+  <div class="sheet rd-sheet">
+    <header class="sheet-head">
+      <div><h1>Recoil designer <span class="hint" id="rdGun"></span></h1><p class="sub">Lay out where every shot of the magazine lands and how widely it spreads, shape the gun's kick and the view shake — RecoilSim builds recoil the game can actually run.</p></div>
+      <div class="sheet-acts"><button class="iconbtn" id="rdClose" title="Close (Esc)"><svg class="ic"><use href="#i-x"/></svg></button></div>
+    </header>
+    <div class="sheet-body rd">
+      <div class="rd-canvas-wrap">
+        <div class="rd-tools">
+          <div class="seg" id="rdTool">
+            <button data-v="line" class="on" title="Click a few points along the path; the shots are spread evenly along it (L)">Draw line</button>
+            <button data-v="place" title="Each click puts the next shot (P)">Place shots</button>
+            <button data-v="move" title="Click a shot to select it, drag it, resize its spread ring (M)">Move shots</button>
+          </div>
+          <span class="vsep"></span>
+          <button class="btn small" id="rdUndo" title="Undo (Ctrl+Z)">Undo</button>
+          <button class="btn small" id="rdRedo" title="Redo (Ctrl+Y)">Redo</button>
+          <button class="btn small" id="rdClear" title="Start over (keeps the gun &amp; view parts)">Clear</button>
+          <button class="btn small" id="rdFromGun" title="Every shot where the current recoil puts it, and how widely it spreads, as targets to edit from">Copy pattern</button>
+          <button class="btn small" id="rdMirror" title="Flip left / right">Mirror</button>
+          <button class="btn small" id="rdSmooth" title="Smooth out jitter">Smooth</button>
+          <span class="spacer"></span>
+          <label class="switch small" title="Show each shot's spread ring (where it may land)"><input type="checkbox" id="rdRings" checked><span></span><em>Rings</em></label>
+          <label class="switch small" title="Show 150 simulated magazines (randomness included)"><input type="checkbox" id="rdSpread"><span></span><em>Spread</em></label>
+          <button class="iconbtn mini" id="rdZoomOut" title="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button>
+          <button class="iconbtn mini" id="rdZoomIn" title="Zoom in"><svg class="ic"><use href="#i-plus"/></svg></button>
+          <button class="iconbtn mini" id="rdZoomFit" title="Fit"><svg class="ic"><use href="#i-fit"/></svg></button>
+        </div>
+        <canvas id="rdCanvas" tabindex="0"></canvas>
+        <div class="rd-motion">
+          <div class="rd-motion-head"><b>Motion</b><span class="rd-legend" id="rdLegend"></span><span class="spacer"></span><span class="hint" id="rdSettle"></span></div>
+          <canvas id="rdMotion"></canvas>
+        </div>
+        <p class="rd-help hint" id="rdHelp"></p>
+      </div>
+      <aside class="rd-side">
+        <div class="seg rd-tabs" id="rdTabs"><button data-v="shots" class="on">Pattern</button><button data-v="camera">Camera</button><button data-v="parts">Gun &amp; view</button></div>
+        <div class="rd-pane" data-rdpane="shots">
+          <section class="rd-sec">
+            <div class="field"><label>Design for</label><div class="seg" id="rdStance"><button data-v="aim" class="on">Aimed</button><button data-v="hip">Hip fire</button></div></div>
+            <div class="field"><label for="rdSource">Start from <span class="tip" data-tip="The recoil the design starts from — every part (camera, gun kick, view shake). Pick another gun to build on its recoil; Copy pattern then puts its shots on the canvas to edit.">?</span></label><select id="rdSource"></select></div>
+            <div class="field"><label for="rdShots">Magazine <span class="tip" data-tip="How many shots the pattern has (the gun's magazine by default).">?</span></label><span class="numbox"><input id="rdShots" type="number" min="2" max="300"><i>shots</i></span></div>
+            <div class="field"><label for="rdCover">Line covers <span class="tip" data-tip="How many of the shots the drawn line is spread over. The rest follow the 'after the line' rule — and every shot can still be moved by hand.">?</span></label><span class="numbox"><input id="rdCover" type="number" min="2" max="300"><i>shots</i></span></div>
+            <div class="field"><label>After the line <span class="tip" data-tip="The shots after the line: Free — the recoil carries on however it naturally would; Settle — they stay around the last point; Keep going — they carry on in the line's last direction, slowing down. Settle and Keep going are soft targets.">?</span></label><div class="seg" id="rdAfter"><button data-v="free" class="on">Free</button><button data-v="settle">Settle</button><button data-v="trend">Keep going</button></div></div>
+            <div class="field"><label for="rdDist">Range</label><span class="numbox"><input id="rdDist" type="number" min="5" max="1000" value="50"><i>st</i></span></div>
+          </section>
+          <section class="rd-sec" id="rdShotBox"></section>
+          <section class="rd-sec">
+            <h3>Spread rings <span class="tip" data-tip="A ring around a shot says how widely it may land around its point (about 19 magazines in 20 land inside). Set rings on a few shots — the ones between follow smoothly — and Make recoil works out each layer's randomness to match. With no rings, Randomness (Camera tab) is used.">?</span></h3>
+            <div class="rd-row"><span class="hint">Every shot ±</span><span class="numbox small"><input id="rdRingAll" type="number" min="0" max="20" step="0.05" value="0.5"><i>st</i></span><button class="btn small" id="rdRingSet">Set</button><button class="btn small" id="rdRingGrow" title="Small at the start, growing to this size at the last shot">Growing</button><button class="link" id="rdRingClear">Clear</button></div>
+            <p class="hint" id="rdRingInfo"></p>
+          </section>
+        </div>
+        <div class="rd-pane hidden" data-rdpane="camera">
+          <section class="rd-sec">
+            <div class="field"><label>Feel <span class="tip" data-tip="Which springs the designer may use. Game-like: like the game's own guns — fast springs may bounce a little, slow ones never do (no floaty swinging). Smooth: nothing bounces. Free: anything, for zig-zags and wild patterns.">?</span></label><div class="seg" id="rdFeel"><button data-v="game" class="on">Game-like</button><button data-v="smooth">Smooth</button><button data-v="free">Free</button></div></div>
+            <div class="field"><label for="rdLayers">Layers <span class="tip" data-tip="Spring layers per direction (pitch and yaw). Auto adds layers until more stop helping. The game takes any number.">?</span></label><select id="rdLayers"></select></div>
+            <div class="field stack"><label for="rdSnap">Snap back <span class="tip" data-tip="How soon after you stop firing the view should be back at the centre. Every layer gets a recovery spring (the game switches to it when no shot has come for the delay below). Off: no preference.">?</span></label><span class="val" id="rdSnapVal">0.6 s</span><input id="rdSnap" type="range" min="0.2" max="3" step="0.05" value="0.6"></div>
+            <label class="check"><input type="checkbox" id="rdSnapOn" checked> Pull the view back to the centre after the last shot</label>
+            <div class="rd-trio">
+              <label>Recovery damping<input type="number" id="rdRecD" step="0.05" min="0.3" max="3" value="0.85"></label>
+              <label>Recovery speed<input type="number" id="rdRecS" step="1" min="3" max="90" value="15"></label>
+              <label>Delay (s)<input type="number" id="rdDelay" step="0.01" min="0" max="2" value="0.1"></label>
+            </div>
+          </section>
+          <section class="rd-sec">
+            <h3>Per shot</h3>
+            <div class="field stack"><label for="rdPunch">Punch <span class="tip" data-tip="A sharp upward kick on every shot that is gone again before the next one: you feel and see it, the pattern barely changes (the fit works around it). Like the game's fast camera layer.">?</span></label><span class="val" id="rdPunchVal">0</span><input id="rdPunch" type="range" min="0" max="4" step="0.05" value="0"></div>
+            <div class="field stack"><label for="rdShake">Side shake <span class="tip" data-tip="A quick random left / right kick on every shot (randomness only, no drift).">?</span></label><span class="val" id="rdShakeVal">0</span><input id="rdShake" type="range" min="0" max="2" step="0.05" value="0"></div>
+            <div class="field stack"><label for="rdVar">Randomness <span class="tip" data-tip="Without spread rings: how much each kick varies around its average (the game's variance), as a share of the kick. 0% = every magazine lands the same.">?</span></label><span class="val" id="rdVarVal">30%</span><input id="rdVar" type="range" min="0" max="100" step="5" value="30"></div>
+          </section>
+          <section class="rd-sec" id="rdLayersBox" hidden></section>
+        </div>
+        <div class="rd-pane hidden" data-rdpane="parts"><div id="rdParts"></div></div>
+        <section class="rd-apply">
+          <button class="btn primary rd-make" id="rdFit" title="Builds the final recoil: fits the camera to your pattern and spread rings, with the Camera settings and the Gun &amp; view parts (Ctrl+Enter)"><b>Make recoil</b><span id="rdFitSub">Fit everything into the final recoil</span></button>
+          <div class="rd-result" id="rdResult"></div>
+          <div class="rd-row"><button class="btn" id="rdApply" title="Replaces this stance's recoil (camera, gun kick and view shake, with their recovery) in the Recoil tab, where you can still edit, export or reset it">Use it on this gun (aimed)</button><button class="btn" id="rdTest" title="Fire a magazine on the range with this design (your gun's recoil comes back after)">Test fire</button></div>
+        </section>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<div class="testbar hidden" id="rdTestBar"><span>Testing the designed recoil</span><button class="btn small" id="rdTestAgain">Fire again</button><button class="btn small primary" id="rdTestKeep">Use it</button><button class="btn small" id="rdTestBack">Back to designer</button></div>
 
 <div class="modal hidden" id="loadModal">
   <div class="dialog">
@@ -333,6 +458,8 @@
 <script src="core.js"></script>
 <script src="range.js"></script>
 <script src="panels.js"></script>
+<script src="recoil.js"></script>
+<script src="designer.js"></script>
 <script src="finder.js"></script>
 <script src="export.js"></script>
 <script src="main.js"></script>

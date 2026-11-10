@@ -247,6 +247,8 @@ class SimSettings:
     track_end: float | None = None    # record the replay track at least until this time
     track_start: float | None = None  # ...and only from this time on (long hold-to-fire sessions)
     firemode_label: str | None = None  # preferred over the index when the setup has that mode
+    controller: bool = False           # pure controller input: the game halves camera recoil
+                                       # (FirearmObject.impulseSprings: MainCamera impulse * 0.5)
 
 
 @dataclass
@@ -659,6 +661,20 @@ def simulate(cfg: WeaponConfig, st: SimSettings) -> SimResult:
             f += 1
     events.sort(key=lambda e: (round(e[0], 9), e[1]))
 
+    # where bullets leave the gun (FirearmObject.fire): the barrel at the hip, the
+    # sight part when aimed. The recoil springs turn the gun about its pivot (the
+    # main part's place in front of the camera), not about the camera, so the fire
+    # point is pivot + spread * (translation + rotation * part offset). Without a
+    # gun model (pose None) bullets start at the camera, as before.
+    fp = (getattr(cfg, "pose", None) or {}).get("aim" if aiming else "hip")
+    if fp:
+        f_P = np.asarray(fp["P"], float)
+        f_Ra = np.asarray(fp["Ra"], float)
+        f_w = np.asarray(fp["w"], float)
+        f_Rf = np.asarray(fp["Rf"], float)
+    else:
+        f_P = np.zeros(3); f_Ra = np.eye(3); f_w = np.zeros(3); f_Rf = np.eye(3)
+
     fps = st.fps
 
     def apply_recovery_until(time):
@@ -697,7 +713,16 @@ def simulate(cfg: WeaponConfig, st: SimSettings) -> SimResult:
         if kind == "sample":
             apply_recovery_until(time - 1e-6)
             M, Mb = frame_matrices(time)
-            o = np.einsum("rij,rj->ri", Mb, trans.position(time))
+            if fp:
+                Mc = aa_to_mat(cam.position(time))
+                Rs = aa_to_mat(spread_spring.position_sum(time)) if hip else np.eye(3)[None]
+                Rr = aa_to_mat(rot.position(time))
+                local_pt = trans.position(time) + np.einsum("rij,j->ri", Rr, f_w)
+                o = np.einsum("rij,rj->ri", Mc, f_P[None] + np.einsum("ij,rj->ri", f_Ra, np.einsum("rij,rj->ri", np.broadcast_to(Rs, Rr.shape), local_pt)))
+                # the firing part's orientation: camera * mainoffset * spread * gun rotation * part
+                M = np.einsum("rij,jk->rik", Mc, f_Ra) @ np.broadcast_to(Rs, Rr.shape) @ Rr @ f_Rf
+            else:
+                o = np.einsum("rij,rj->ri", Mb, trans.position(time))
             if spread:
                 local = np.empty((R, pellets, 3))
                 for k in range(pellets):
@@ -722,10 +747,11 @@ def simulate(cfg: WeaponConfig, st: SimSettings) -> SimResult:
         elif kind == "impulse":
             apply_recovery_until(time)
             for gp in groups:
-                gp.impulse(time, mult, rng)
+                # camera (body and head) kicks are halved on a pure controller
+                gp.impulse(time, mult * (0.5 if st.controller and gp is cam else 1.0), rng)
             if head is not None:
                 head.check_recovery(time)
-                head.impulse(time, mult, head_rng)
+                head.impulse(time, mult * (0.5 if st.controller else 1.0), head_rng)
             if hip:
                 cs = cross.pos(time)
                 spread_spring.advance(time)

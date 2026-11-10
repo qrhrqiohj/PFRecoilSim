@@ -551,7 +551,7 @@ class BatchJob:
                           else f"stk_{shotgun[name]}" if shotgun.get(name) else metric)
             req = {"weapon": name, "metric": gun_metric, "settings": settings, "locked": self._locks_for(name),
                    "exclude": default_excludes_for(self.gd, name, self.req.get("exclude_tokens")),
-                   "lists": lists, "top_n": max(per_gun, 3) if per_gun else 0, **depth}
+                   "lists": lists, "top_n": max(per_gun, 3) if per_gun else 0, "tiebreak": self.req.get("tiebreak"), **depth}
             job = OptimizeJob(self.gd, req, pool=self.pool)
             self.current = job
             self.stage = f"{disp} ({i + 1}/{len(guns)})"

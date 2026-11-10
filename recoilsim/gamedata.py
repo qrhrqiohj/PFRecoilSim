@@ -30,16 +30,63 @@ class WeaponConfig:
     stats: dict  # full compiled stat table (plain python)
     recoil: dict  # plain python recoil table
     anims: dict = field(default_factory=dict)
+    pose: dict | None = None  # where bullets leave the gun (models.fire_pose); None: from the camera
 
     def get(self, key, default=None):
         v = self.stats.get(key)
         return default if v is None else v
 
 
+# Class order, as the game's loadout menu has it (LoadoutConfig.classSlots, the
+# Assault / Scout / Support / Recon kits in turn): primaries, then secondaries.
+CLASS_ORDER = ("ASSAULT RIFLE", "BATTLE RIFLE", "CARBINE", "SHOTGUN", "PDW", "DMR", "LMG", "SNIPER RIFLE",
+               "PISTOLS", "MACHINE PISTOLS", "REVOLVERS", "OTHER")
+
+
+def class_key(cls):
+    return (CLASS_ORDER.index(cls) if cls in CLASS_ORDER else len(CLASS_ORDER), cls)
+
+
 class GameData:
     def __init__(self, path: Path | None = None):
         self.path = Path(path) if path else self._default_path()
+        self.models = None
+        self.recoil_overrides = {}  # weapon -> edited recoil (recoil_edit canonical form)
+        self._ovr_sig = {}
         self.reload()
+
+    def set_recoil_overrides(self, overrides):
+        """Use edited recoil (the Recoil tab) for these guns: {weapon: canonical
+        table}; guns not listed use the game's. Attachments still modify it as
+        in game. Changing a gun's override drops its compiled setups."""
+        import json as _json
+        from .recoil_edit import sanitize
+        new = {}
+        for w, rec in (overrides or {}).items():
+            if w in self._raw_weapons and rec:
+                try:
+                    new[w] = sanitize(rec)
+                except ValueError:
+                    continue
+        sig = {w: _json.dumps(r, sort_keys=True) for w, r in new.items()}
+        if sig == self._ovr_sig:
+            return
+        changed = {w for w in set(sig) | set(self._ovr_sig) if sig.get(w) != self._ovr_sig.get(w)}
+        self.recoil_overrides, self._ovr_sig = new, sig
+        for k in [k for k in self._compile_cache if k[0] in changed]:
+            del self._compile_cache[k]
+
+    def base_recoil(self, weapon):
+        """The game's own recoil table of a gun (no attachments, no edits), canonical."""
+        from .recoil_edit import canonical
+        return canonical(to_plain(self.weapon_entry(weapon)["data"].get("recoil") or {}))
+
+    def use_models(self, lib):
+        """Gun models (models.ModelLibrary): compiled setups then carry the
+        barrel / sight position bullets are fired from (hip fire leaves the
+        barrel, about a stud right and below the crosshair)."""
+        self.models = lib if lib is not None and getattr(lib, "available", False) else None
+        self._compile_cache = {}
 
     @staticmethod
     def _default_path():
@@ -139,7 +186,7 @@ class GameData:
             })
         for lst in out.values():
             lst.sort(key=lambda x: self.rank_key(x["name"]))
-        return dict(sorted(out.items()))
+        return dict(sorted(out.items(), key=lambda kv: class_key(kv[0])))
 
     def attachment_options(self, weapon):
         entry = self.weapon_entry(weapon)
@@ -171,6 +218,11 @@ class GameData:
         entry = self.weapon_entry(weapon)
         base = entry["data"]
         att_set = entry["attachments"]
+        if weapon in self.recoil_overrides:
+            # the edited recoil replaces the gun's own; attachments apply on top as usual
+            from .recoil_edit import to_raw
+            base = dict(base)
+            base["recoil"] = from_json(to_raw(self.recoil_overrides[weapon]))
 
         mods = {}
         # 1) global attachment modifiers, in slot order
@@ -265,5 +317,11 @@ class GameData:
             recoil=plain.get("recoil") or {},
             anims=anims,
         )
+        if self.models is not None:
+            try:
+                from .models import fire_pose
+                cfg.pose = fire_pose(self, self.models, weapon, attachments, plain)
+            except Exception:  # a model that can't be built: fire from the camera
+                cfg.pose = None
         self._compile_cache[key] = cfg
         return cfg

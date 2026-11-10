@@ -27,10 +27,17 @@ let optGroups = null;       // {slot: [{rep, members, no_effect}]} from the serv
 const optLocks = new Map(); // slot -> attachment locked for the search ("" = empty slot)
 let optLocksWeapon = null;
 let slotEdit = null;        // {slot, mode: "exclude" | "lock"} — the open slot editor
-let setOStance, setOptAim;
+let setOStance, setOptAim, setOInput;
 
+function finderScenarioState() {
+  if (!finder.seeded) return null;
+  const on = (id) => ((($(id).querySelector("button.on") || {}).dataset) || {}).v;
+  return { distance: $("oDistance").value, aim_point: $("oAimPoint").value, stance: on("oStanceSeg"), input: on("oInputSeg"),
+    shots: $("oShots").value, trigger: $("oTrigger").value, health: $("oHealth").value, fps: $("oFps").value, drop: $("oDrop").checked };
+}
 function finderUiState() {
-  return { metric: $("metric").value, oneshotChance: $("oneshotChance").value, optComp: +$("optComp").value, optAiming: finder.aiming, optDepth: finder.depth, optTop: finder.top, optTab: finder.tab };
+  return { metric: $("metric").value, oneshotChance: $("oneshotChance").value, optComp: +$("optComp").value, optAiming: finder.aiming, optDepth: finder.depth, optTop: finder.top, optTab: finder.tab,
+    optScenario: finderScenarioState() };
 }
 function applyFinderUi(u) {
   if (!u) return;
@@ -42,6 +49,16 @@ function applyFinderUi(u) {
   if (u.optDepth) { finder.depth = u.optDepth; $("optDepth").value = u.optDepth; }
   if (u.optTop != null) setFinderTop(u.optTop);
   if (u.optTab) finder.tab = u.optTab;
+  const sc = u.optScenario;
+  if (sc && typeof sc === "object") {
+    // the finder's own scenario from last time (it no longer follows the range)
+    $("oDistance").value = sc.distance || 50;
+    if (sc.aim_point) $("oAimPoint").value = sc.aim_point;
+    setOStance(sc.stance || "stand"); setOInput(sc.input || "kbm");
+    $("oShots").value = sc.shots || ""; $("oTrigger").value = sc.trigger || "";
+    $("oHealth").value = sc.health || 100; $("oFps").value = sc.fps || 60; $("oDrop").checked = !!sc.drop;
+    finder.seeded = true;
+  }
   updateMetricHint();
 }
 /* how many setups to list: a preset, "All" (0) or the user's own number */
@@ -57,6 +74,7 @@ function updateTopHint() {
   $("optTopHint").textContent = finder.top === 0 ? "All lists every distinct setup the search finds; re-running them all with many mags takes longer." : "";
 }
 function updateMetricHint() {
+  finderTieGoal();
   // the description shows when hovering the goal (and each option in its list)
   $("metric").title = GOAL_HINTS[$("metric").value] || "";
   // "counts as a one-shot" only matters for pellets: a single bullet's first shot
@@ -133,6 +151,7 @@ function initFinder() {
   $("metric").value = "accuracy";
   for (const o of $("aimPoint").options) $("oAimPoint").add(new Option(o.text, o.value));
   setOStance = seg("oStanceSeg", () => {});
+  setOInput = seg("oInputSeg", () => {});
   setOptAim = seg("optAimSeg", (v) => { finder.aiming = v === "aim"; saveSettings(); });
   updateMetricHint();
   $("metric").addEventListener("change", () => { updateMetricHint(); saveSettings(); });
@@ -148,7 +167,10 @@ function initFinder() {
     updateTopHint(); saveSettings();
   });
   $("optTopN").addEventListener("change", () => { setFinderTop(Math.max(1, Math.round(+$("optTopN").value || 1)), true); saveSettings(); });
-  $("optSync").addEventListener("click", () => { syncScenario(true); toast("Scenario copied from the range."); });
+  $("optSync").addEventListener("click", () => { syncScenario(true); finder.seeded = true; saveSettings(); toast("Scenario copied from the range."); });
+  // the finder's scenario is remembered (session save)
+  $("oDistance").closest(".group").addEventListener("change", () => saveSettings());
+  $("oDistance").closest(".group").addEventListener("click", (e) => { if (e.target.closest(".seg button")) setTimeout(saveSettings, 0); });
   $("optDefaults").addEventListener("click", openDefaultsEditor);
   $("optOpen").addEventListener("click", () => openFinder());
   $("optGun").addEventListener("click", () => openWeaponPicker($("optGun"), { current: () => finder.weapon, pick: (n) => setFinderWeapon(n) }));
@@ -178,7 +200,10 @@ function openFinder() {
   finder.weapon = state.weapon;
   finder.info = state.weaponInfo;
   showFinderWeapon();
-  syncScenario();
+  // the scenario starts from the range the first time only; after that it keeps
+  // what you set here ("Copy from range" takes the range's values again)
+  if (!finder.seeded) { syncScenario(); finder.seeded = true; saveSettings(); }
+  else syncFireModes(true);
   refreshGoalOptions();
   openModal("optModal");
 }
@@ -215,6 +240,9 @@ function syncScenario(all = false) {
   $("oDistance").value = s.distance;
   $("oAimPoint").value = s.aim_point;
   setOStance(s.stance);
+  setOInput(s.controller ? "pad" : "kbm");
+  $("oShots").value = s.shots || "";
+  $("oTrigger").value = s.trigger_rpm || "";
   $("oHealth").value = s.health;
   $("oFps").value = String(s.fps);
   syncFireModes(finder.weapon === state.weapon);
@@ -232,7 +260,9 @@ function finderSettings() {
   const stance = ($("oStanceSeg").querySelector("button.on") || {}).dataset;
   return {
     ...base,
-    shots: null, trigger_rpm: finder.weapon === state.weapon ? base.trigger_rpm : null,
+    shots: +$("oShots").value > 0 ? Math.round(+$("oShots").value) : null,
+    trigger_rpm: +$("oTrigger").value > 0 ? +$("oTrigger").value : null,
+    controller: (($("oInputSeg").querySelector("button.on") || {}).dataset || {}).v === "pad",
     distance: +$("oDistance").value || base.distance,
     aim_point: $("oAimPoint").value || base.aim_point,
     stance: stance ? stance.v : base.stance,
@@ -407,7 +437,7 @@ async function runOptimizer() {
   try {
     const { id } = await api("/api/optimize", {
       weapon, metric: $("metric").value, settings: scenario, locked, exclude: excludesFor(weapon),
-      depth: finder.depth, top_n: finder.top,
+      depth: finder.depth, top_n: finder.top, tiebreak: tiebreakList(),
     });
     optJobId = id;
     const poll = async () => {
@@ -430,6 +460,7 @@ async function runOptimizer() {
         st.result.labels = Object.fromEntries(SLOTS.map((sl) => [sl, Object.fromEntries((info.attachments[sl] || []).map((o) => [o.name, o.displayname]))]));
         state.lastOptWeapon = weapon;
         state.optResults[weapon] = st.result;
+        storeResults();
         if (weapon === finder.weapon) renderOptResults(st.result);
         return;
       }
@@ -536,8 +567,8 @@ function renderOptResults(r) {
     spread: "Ranked by <b>spread</b> — the random scatter around the average pattern. Nobody can learn it away, so it matters most for good players.",
     climb: "Ranked by <b>climb</b> — how far the recoil drags the average pattern away from your aim before any recoil control: how much you have to pull against. Lower = easier to control.",
     combined: isStk(r.metric)
-      ? `<b>Best overall</b> — ranked by the first STK range (${r.metric.slice(4)}): the fewest shots that kill at the gun's best range${(r.scenario || {}).oneshot_chance ? ` (a one-shot has to kill ${Math.round(r.scenario.oneshot_chance)}% of the time)` : ""}, then how far that holds; equal ranges go to the longer <b>average</b> range, then better <b>handling</b> (aim, walk, sprint and equip speed vs the bare gun), then less recoil (distance from aim) — for a setup that needs more than one shot, less recoil comes before handling.`
-      : `<b>Best overall</b> — ranked by your goal: <b>${esc(r.metric_label)}</b>.`,
+      ? `<b>Best overall</b> — ranked by the first STK range (${r.metric.slice(4)}): the fewest shots that kill at the gun's best range${(r.scenario || {}).oneshot_chance ? ` (a one-shot has to kill ${Math.round(r.scenario.oneshot_chance)}% of the time)` : ""}, then how far that holds; equal ranges go to the longer <b>average</b> range, then ${r.tiebreak ? `your tie-breakers: <b>${esc(tiebreakText(r.tiebreak))}</b>` : `better <b>handling</b> (aim, walk, sprint and equip speed vs the bare gun), then less recoil (distance from aim) — for a setup that needs more than one shot, less recoil comes before handling`}.`
+      : `<b>Best overall</b> — ranked by your goal: <b>${esc(r.metric_label)}</b>${r.tiebreak ? `; ties go to <b>${esc(tiebreakText(r.tiebreak))}</b>` : ""}.`,
   }[tab];
   const sc = r.scenario || {};
   const base = r.baseline;
@@ -589,4 +620,11 @@ function breakdownHtml(r, tab, best) {
     }).join("")}</ol></div>`;
   }).join("")}</div>
   <p class="hint">Highlighted: what #1 in this list uses. The best single attachment isn't always in the best setup, because attachments interact.</p>`;
+}
+
+/* the finder's tie-breaker box shows the built-in order for its goal */
+function finderTieGoal() {
+  const host = document.querySelector("#optModal .tiebox-host");
+  if (host) host.dataset.goal = $("metric").value;
+  renderTieboxes();
 }

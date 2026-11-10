@@ -48,9 +48,14 @@ function initExport() {
   initDefaultsEditor();
 }
 function openExport() {
-  const s = settings();
-  for (const k of ["allBest", "allStats"]) Object.assign(ex.o[k], { distance: s.distance, aim_point: s.aim_point, stance: s.stance, health: s.health, fps: s.fps });
-  ex.o.damage.health = s.health;
+  // the scenario starts from the range the first time only: after that it keeps
+  // what you set here ("Copy from range" takes the range's values again)
+  if (!ex.seeded) {
+    const s = settings();
+    for (const k of ["allBest", "allStats"]) Object.assign(ex.o[k], { distance: s.distance, aim_point: s.aim_point, stance: s.stance, health: s.health, fps: s.fps });
+    ex.o.damage.health = s.health;
+    ex.seeded = true;
+  }
   if (gunBestResult() && !ex.jobs.allBest) ex.kind = ex.kind === "allBest" ? "gunBest" : ex.kind;
   openModal("exportModal");
   renderExport();
@@ -83,13 +88,16 @@ function optChips(key, values, options) {
 }
 function scenarioFields(o, withHealth = true) {
   const ap = [...$("aimPoint").options].map((x) => [x.value, x.text]);
-  return `<div class="copyrow"><h2>Scenario</h2><button class="btn small" data-copyrange="1" title="Copy range, aim point, stance, sight, fire mode, recoil control, health and FPS from the Setup panel">Copy from range</button></div>`
+  return `<div class="copyrow"><h2>Scenario</h2><button class="btn small" data-copyrange="1" title="Copy range, aim point, stance, sight, fire mode, recoil control, input, shots per mag, click rate, health and FPS from the Setup panel">Copy from range</button></div>`
     + optField("Range", `<span class="numbox fpsbox"><input type="number" data-o="distance" value="${o.distance}" min="1" max="2000" step="any" title="Type any range, or pick a common one with the arrow"><i>st</i>${presetButton(RANGE_PRESETS, "st", "Common ranges")}</span>`)
     + optField("Aim at", optSelect("aim_point", o.aim_point, ap))
     + optField("Stance", optSelect("stance", o.stance, [["stand", "Stand"], ["crouch", "Crouch"], ["prone", "Prone"]]))
     + optField("Sight", optSelect("aiming", o.aiming ? "1" : "0", [["1", "Aimed"], ["0", "Hip fire"]]))
     + optField("Fire mode", optSelect("fire", o.fire, [["default", "Gun's first mode"], ["auto", "Prefer auto"], ["semi", "Prefer semi"], ["burst", "Prefer burst"]]), "Every gun has different modes, so pick a preference; guns without that mode use their first one.")
     + optField("Recoil control", optNumber("comp", o.comp, 0, 100, "%"), "How well the shooter pulls against the average recoil. 100% leaves only random spread.")
+    + optField("Input", optSelect("input", o.input || "kbm", [["kbm", "Mouse & keyboard"], ["pad", "Controller"]]), "Pure controller input: the game halves camera recoil (the view kick, which the gun and bullets follow). Gun recoil and spread are the same.")
+    + optField("Click rate", `<span class="numbox"><input type="number" data-o="trigger" value="${o.trigger || ""}" min="30" max="3000" placeholder="Max"><i>rpm</i></span>`, "Trigger pulls per minute for semi / burst modes. Empty: the fastest clicking each gun allows.")
+    + (withHealth ? optField("Shots per mag", `<span class="numbox"><input type="number" data-o="shots" value="${o.shots || ""}" min="1" max="500" placeholder="Full mag"></span>`, "Empty: every setup fires the bare gun's magazine (damage goals: each setup's own). A number: every setup fires that many.") : "")
     + (withHealth ? optField("Enemy health", optUnit("health", o.health, 1, 1000, "hp")) : "")
     + optField("Game FPS", `<span class="numbox fpsbox"><input type="number" data-o="fps" value="${o.fps}" min="1" max="1000" step="any" title="Type any frame rate, or pick a common one with the arrow"><i>fps</i>${presetButton(FPS_PRESETS, "fps", "Common frame rates")}</span>`)
     + optField("Bullet drop", `<label class="switch"><input type="checkbox" data-o="drop" ${o.drop ? "checked" : ""}><span></span><em>${o.drop ? "Counts" : "Held over"}</em></label>`, "Off (recommended): you aim for drop at this range, so drop never counts as recoil. On: bullets drop below where you aim.");
@@ -98,10 +106,13 @@ function copyRangeInto(o) {
   const s = settings();
   const mode = currentModeLabel();
   Object.assign(o, { distance: s.distance, aim_point: s.aim_point, stance: s.stance, aiming: s.aiming, comp: s.compensation, health: s.health, fps: s.fps,
+    input: s.controller ? "pad" : "kbm", trigger: s.trigger_rpm || "",
     fire: mode === "AUTO" || mode === "SWITCH" ? "auto" : mode.startsWith("BURST") ? "burst" : "semi" });
 }
 function batchSettings(o) {
-  return { distance: +o.distance || 50, aim_point: o.aim_point, stance: o.stance, aiming: !!o.aiming, compensation: +o.comp || 0, health: +o.health || 100, fps: +o.fps || 60, drop: !!o.drop, oneshot_chance: +o.oneshotChance || 80 };
+  return { distance: +o.distance || 50, aim_point: o.aim_point, stance: o.stance, aiming: !!o.aiming, compensation: +o.comp || 0, health: +o.health || 100, fps: +o.fps || 60, drop: !!o.drop, oneshot_chance: +o.oneshotChance || 80,
+    controller: o.input === "pad", trigger_rpm: +o.trigger > 0 ? +o.trigger : null, shots: +o.shots > 0 ? Math.round(+o.shots) : null,
+    ...(Object.keys(state.recoilEdits || {}).length ? { recoil_overrides: state.recoilEdits } : {}) };
 }
 
 function onExOption(e) {
@@ -131,6 +142,7 @@ function onExOption(e) {
   else if (["perGun", "top"].includes(k)) v = +v;
   if (k === "fps") v = clampFps(v);
   o[k] = v;
+  saveExportOpts();
   if (k === "sim" || k === "mode" || k === "drop" || k === "metric" || k === "shotguns") renderExport();
   else if (e.type === "change") { renderExRun(); buildTable(); }
   else refreshExportSoon();
@@ -190,7 +202,20 @@ function onExOptionClick(e) {
 const refreshExportSoon = debounce(() => buildTable(), 300);
 
 /* ------------------------------------------------------------------ the five kinds */
+/* the export options are part of the session save (offered again on the next start) */
+const EXPORT_SAVED = ["allBest", "allStats", "damage", "gunBest"];
+function saveExportOpts() {
+  if (state.restoring) return;
+  state.saved.exportOpts = JSON.parse(JSON.stringify(Object.fromEntries(EXPORT_SAVED.map((k) => [k, ex.o[k]]))));
+  store();
+}
+function restoreExportOpts(saved) {
+  if (!saved || typeof saved !== "object") return;
+  for (const k of EXPORT_SAVED) if (saved[k] && typeof saved[k] === "object") Object.assign(ex.o[k], saved[k]);
+  ex.seeded = true;
+}
 function renderExport() {
+  saveExportOpts();
   document.querySelectorAll(".ex-kind").forEach((b) => b.classList.toggle("on", b.dataset.k === ex.kind));
   const o = ex.o[ex.kind];
   const classChips = (key) => optField("Classes", `<div>${optChips(key, o[key], classesOf().map((c) => [c, titleCase(c)]))}<div class="hint"><button class="link" data-all="${key}" data-val="all">All</button> · <button class="link" data-all="${key}" data-val="none">None</button></div></div>`, null, true);
@@ -206,6 +231,7 @@ function renderExport() {
       + exSlotsHtml(o)
       + optField("Setups per gun", optCount("perGun", o.perGun, [[1, "1"], [3, "3"], [5, "5"], [10, "10"], [0, "All"]]), "All lists every distinct setup the search finds for each gun (much slower).")
       + optField("Search depth", optSelect("depth", o.depth, [["quick", "Quick"], ["standard", "Standard"], ["thorough", "Thorough (slow)"]]), "Quick tests fewer combinations and mags per gun. Thorough is the same depth as the Best setup finder.")
+      + optField("Tie-breakers", `<div class="tiebox-host" data-goal="${esc(o.metric + (!isStk(o.metric) && (o.shotguns || "oneshot") === "oneshot" ? "+os" : ""))}">${tiebreakHtml(o.metric + (!isStk(o.metric) && (o.shotguns || "oneshot") === "oneshot" ? "+os" : ""))}</div>`, "What decides between setups that are equal on the goal (for First STK goals: the same range). Default keeps the built-in order; Custom lets you pick and order your own. Shared with the Best setup finder.")
       + scenarioFields(o);
   } else if (ex.kind === "gunBest") {
     const r = gunBestResult();
@@ -257,12 +283,14 @@ function allGuns() { return Object.values(state.catalog.classes).flat(); }
 function gunOn(o) { return o.guns ? new Set(o.guns) : new Set(allGuns().map((w) => w.name)); }
 function gunMenuHtml(o) {
   const on = gunOn(o), f = norm(ex.gunFilter);
+  let lastSlot = null;
   const rows = Object.entries(state.catalog.classes).map(([cls, list]) => {
     const k = list.filter((w) => on.has(w.name)).length;
     const shown = list.filter((w) => !f || norm(w.displayname).includes(f) || norm(w.name).includes(f));
     if (f && !shown.length) return "";
     const open = f || ex.gunOpen.has(cls);
-    return `<div class="gm-class">
+    const head = slotOfClass(cls) !== lastSlot ? `<div class="gm-slot">${(lastSlot = slotOfClass(cls))}</div>` : "";
+    return `${head}<div class="gm-class">
         <div class="gm-row" data-gpc="${esc(cls)}"><span class="ck ${k === list.length ? "on" : k ? "part" : ""}"></span><b>${esc(titleCase(cls))}</b><span class="sm">${k}/${list.length}</span>
           <button class="gm-x ${open ? "open" : ""}" data-gpx="${esc(cls)}" title="${open ? "Hide guns" : "Pick single guns"}">${icon("chev")}</button></div>
         ${open ? shown.map((w) => `<div class="gm-row gm-gun" data-gpg="${esc(w.name)}"><span class="ck ${on.has(w.name) ? "on" : ""}"></span>${esc(w.displayname)}<span class="sm">${rankLabel(w.rank, w.test)}</span></div>`).join("") : ""}</div>`;
@@ -330,6 +358,7 @@ async function importSheet(file) {
     if (!r.ok) throw new Error(t.error || r.statusText);
     ex.imported = t;
     ex.kind = "imported";
+    storeResults();
     toast(`Imported ${t.rows.length.toLocaleString()} rows from ${file.name}.`, 3000);
   } catch (e) { toast(e.message, 4500); }
   renderExport();
@@ -344,10 +373,21 @@ async function loadAllAtts() {
   return allAtts;
 }
 function exclTokens(o) { return o.excl || defaultTokenList(); }
+/* toggle an attachment on every gun (its gun-only entries go either way: on
+   every gun covers them, off clears the attachment entirely) */
+function toggleEverywhere(set, t) {
+  const a = allAtts && Object.values(allAtts).flat().find((x) => x.name === t);
+  const ids = ((a && a.gun_ids) || []).map(([w]) => w);
+  const covered = ids.length > 0 && ids.every((w) => set.has(`${w}::${t}`));
+  const on = !(set.has(t) || covered);
+  for (const x of [...set]) if (x.endsWith(`::${t}`)) set.delete(x);
+  on ? set.add(t) : set.delete(t);
+  return set;
+}
 function toggleExclusion(t) {
   const o = ex.o.allBest;
   const set = new Set(exclTokens(o));
-  set.has(t) ? set.delete(t) : set.add(t);
+  if (t.includes("::")) set.has(t) ? set.delete(t) : set.add(t); else toggleEverywhere(set, t);
   o.excl = [...set];
   renderExport();
 }
@@ -373,7 +413,7 @@ function exSlotsHtml(o) {
         <button class="btn small ${open === "lock" ? "on" : ""} ${locked ? "lk" : ""}" data-xedit="lock" data-slot="${slot}">${icon("lock")}${locked ? "Locked" : "Lock"}</button></div></div>`;
   }).join("");
   const editor = E.slot ? `<div class="exeditor ${E.mode === "lock" ? "lockmode" : ""}"><div class="exhead">
-      <h4>${E.mode === "lock" ? `Lock the ${E.slot.toLowerCase()} slot for every gun that can use it <span class="hint">· other guns search it as usual</span>` : `Exclude from every gun's ${E.slot.toLowerCase()} search <span class="hint">· red = left out, click to toggle</span>`}</h4>
+      <h4>${E.mode === "lock" ? `Lock the ${E.slot.toLowerCase()} slot for every gun that can use it <span class="hint">· other guns search it as usual</span>` : `Exclude from every gun's ${E.slot.toLowerCase()} search <span class="hint">· click = every gun (red) · right-click = pick guns (orange)</span>`}</h4>
       <input id="exExSearch" placeholder="Filter…" value="${esc(E.filter)}">
       ${E.mode === "exclude" ? `<button class="btn small" data-xact="incl">Include all</button>` : ""}<button class="btn small primary" data-xact="done">Done</button></div>
       <div class="chips" id="exExChips"></div></div>` : "";
@@ -394,20 +434,103 @@ function renderExclChips() {
       + list.slice(0, 400).map((a) => `<span class="chip ${cur === a.name ? "lk" : ""}" data-xlock="${esc(a.name)}" ${a.only ? "" : `title="${esc(gunListTip(a))}"`}>${esc(a.displayname)}${meta(a)}</span>`).join("");
     return;
   }
-  const set = new Set(exclTokens(o));
-  const specific = gunTokenChips(slot, [...defaultTokenList(), ...exclTokens(o)]);
-  const chips = specific.concat(list.map((a) => [a.name, esc(a.displayname) + meta(a), a.only ? "" : gunListTip(a)]));
-  chips.sort((a, b) => (set.has(b[0]) - set.has(a[0])));
-  box.innerHTML = chips.slice(0, 400).map(([t, l, tip]) => `<span class="chip ${set.has(t) ? "x" : ""}" data-tok="${esc(t)}" ${tip ? `title="${esc(tip)}"` : ""}>${l}</span>`).join("") || `<span class="hint">Nothing matches.</span>`;
+  box.innerHTML = exclChipsHtml(slot, list, exclTokens(o));
 }
 
-function gunListTip(a) { return a.gun_list ? `${a.guns} guns: ${a.gun_list.join(", ")}` : `${a.guns} guns`; }
-function gunTokenChips(slot, tokens) {
-  // "GUN::name" entries (that gun only) belonging to this slot
-  return [...new Set(tokens.filter((t) => t.includes("::")))].map((t) => t.split("::"))
-    .filter(([, n]) => (allAtts[slot] || []).some((a) => a.name === n))
-    .map(([w, n]) => [`${w}::${n}`, `${esc(attName(slot, n))} <span class="sm">${esc(w)} only</span>`]);
+/* One chip per attachment. Click: exclude it on every gun. Right-click: a list of
+   the guns that can use it, to exclude it on some of them only ("GUN::name"
+   entries). A chip with gun-only exclusions shows which guns. */
+function exclChipsHtml(slot, list, tokens) {
+  const set = new Set(tokens);
+  const gunOnly = (name) => tokens.filter((t) => t.endsWith(`::${name}`)).map((t) => t.slice(0, -name.length - 2));
+  const rows = list.map((a) => {
+    const ids = (a.gun_ids || []).map(([w]) => w);
+    // gun-only entries that cover every gun it's on are the same as "every gun"
+    const glob = set.has(a.name) || (ids.length > 0 && ids.every((w) => set.has(`${w}::${a.name}`)));
+    const guns = glob ? [] : gunOnly(a.name);
+    const disp = (w) => ((a.gun_ids || []).find(([id]) => id === w) || [w, w])[1];
+    const only = guns.length ? ` <span class="xg">${guns.length === 1 ? esc(disp(guns[0])) : `${guns.length} guns`} only</span>` : "";
+    const meta = ` <span class="sm">${a.only ? esc(a.only) : `${a.guns} guns`}</span>`;
+    const tip = `${a.only ? `${a.only} only` : gunListTip(a)}${guns.length ? `\nExcluded on: ${guns.map(disp).join(", ")}` : ""}\nClick: exclude on every gun · Right-click: pick guns`;
+    return { rank: glob ? 0 : guns.length ? 1 : 2, html: `<span class="chip ${glob ? "x" : guns.length ? "xpart" : ""}" data-tok="${esc(a.name)}" data-slot="${esc(slot)}" title="${esc(tip)}">${esc(a.displayname)}${meta}${only}</span>` };
+  });
+  rows.sort((x, y) => x.rank - y.rank);
+  return rows.slice(0, 500).map((r) => r.html).join("") || `<span class="hint">Nothing matches.</span>`;
 }
+
+/* right-click menu: exclude an attachment on chosen guns */
+const gunX = { box: null, slot: null, name: null, filter: "" };
+function exclTarget(box) {
+  // whose list a chip edits: the default list (editor dialog) or the export's own
+  return box === "defChips"
+    ? { get: () => defaultTokenList(), set: (t) => { prefs.defExcl = t; savePrefs(); renderDefaults(); afterDefaultsChanged(); } }
+    : { get: () => exclTokens(ex.o.allBest), set: (t) => { ex.o.allBest.excl = t; renderExport(); } };
+}
+function closeGunX() { const m = document.querySelector(".gunxmenu"); if (m) m.remove(); gunX.name = null; }
+function renderGunX() {
+  const m = document.querySelector(".gunxmenu");
+  if (!m) return;
+  const a = (allAtts[gunX.slot] || []).find((x) => x.name === gunX.name);
+  if (!a) { closeGunX(); return; }
+  const t = exclTarget(gunX.box).get(), set = new Set(t), glob = set.has(a.name), f = norm(gunX.filter);
+  const ids = (a.gun_ids || []).filter(([, d]) => !f || norm(d).includes(f));
+  const n = (a.gun_ids || []).filter(([w]) => set.has(`${w}::${a.name}`)).length;
+  m.querySelector(".gx-body").innerHTML = `<label class="gx-row gx-all"><input type="checkbox" data-gx="*" ${glob ? "checked" : ""}><b>Every gun</b><span class="sm">${a.guns}</span></label>
+    ${ids.map(([w, d]) => `<label class="gx-row ${glob ? "dim" : ""}"><input type="checkbox" data-gx="${esc(w)}" ${glob || set.has(`${w}::${a.name}`) ? "checked" : ""} ${glob ? "disabled" : ""}>${esc(d)}</label>`).join("")}`;
+  m.querySelector(".gx-count").textContent = glob ? "Excluded on every gun" : n ? `Excluded on ${n} gun${n === 1 ? "" : "s"}` : "Not excluded";
+}
+function openGunX(ev, chip) {
+  closeGunX();
+  const a = (allAtts[chip.dataset.slot] || []).find((x) => x.name === chip.dataset.tok);
+  if (!a) return;
+  Object.assign(gunX, { box: chip.closest("#defChips") ? "defChips" : "exExChips", slot: chip.dataset.slot, name: a.name, filter: "" });
+  const m = document.createElement("div");
+  m.className = "gunxmenu";
+  m.innerHTML = `<div class="gx-head"><b>${esc(a.displayname)}</b><span class="hint">exclude on…</span></div>
+    ${(a.gun_ids || []).length > 10 ? `<input class="gx-filter" placeholder="Find a gun…">` : ""}
+    <div class="gx-body"></div><div class="gx-foot"><span class="hint gx-count"></span><button class="btn small" data-gxdone>Done</button></div>`;
+  document.body.appendChild(m);
+  renderGunX();
+  const w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = `${Math.max(8, Math.min(ev.clientX, innerWidth - w - 8))}px`;
+  m.style.top = `${Math.max(8, Math.min(ev.clientY, innerHeight - h - 8))}px`;
+  const fi = m.querySelector(".gx-filter");
+  if (fi) { fi.addEventListener("input", () => { gunX.filter = fi.value; renderGunX(); }); fi.focus(); }
+  m.addEventListener("change", (e) => {
+    const c = e.target.closest("[data-gx]");
+    if (!c) return;
+    const tgt = exclTarget(gunX.box), set = new Set(tgt.get()), name = gunX.name;
+    if (c.dataset.gx === "*") {
+      // every gun: one entry for all of them (gun-only entries for it are dropped)
+      for (const x of [...set]) if (x.endsWith(`::${name}`)) set.delete(x);
+      c.checked ? set.add(name) : set.delete(name);
+    } else {
+      const k = `${c.dataset.gx}::${name}`;
+      c.checked ? set.add(k) : set.delete(k);
+      // every gun that has it ticked one by one (e.g. the only gun it's on) is
+      // simply "excluded on every gun"
+      const a = (allAtts[gunX.slot] || []).find((x) => x.name === name);
+      const ids = (a && a.gun_ids || []).map(([w]) => w);
+      if (ids.length && ids.every((w) => set.has(`${w}::${name}`))) {
+        for (const w of ids) set.delete(`${w}::${name}`);
+        set.add(name);
+      }
+    }
+    tgt.set([...set]);
+    renderGunX();
+  });
+  m.querySelector("[data-gxdone]").addEventListener("click", closeGunX);
+}
+document.addEventListener("contextmenu", (e) => {
+  const chip = e.target.closest("#defChips [data-tok], #exExChips [data-tok]");
+  if (!chip || !allAtts || ex.exEdit.mode === "lock" && chip.closest("#exExChips")) return;
+  e.preventDefault();
+  openGunX(e, chip);
+});
+document.addEventListener("mousedown", (e) => { if (!e.target.closest(".gunxmenu")) closeGunX(); }, true);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.querySelector(".gunxmenu")) { closeGunX(); e.stopPropagation(); } }, true);
+
+function gunListTip(a) { return a.gun_list ? `${a.guns} guns: ${a.gun_list.join(", ")}` : `${a.guns} guns`; }
 
 /* ------------------------------------------------------------------ editing the default exclusion list */
 const defEdit = { slot: "Barrel", filter: "" };
@@ -420,12 +543,11 @@ async function openDefaultsEditor() {
   renderDefaults();
 }
 function renderDefaults() {
-  const tokens = defaultTokenList(), set = new Set(tokens), slot = defEdit.slot, f = norm(defEdit.filter);
+  const tokens = defaultTokenList(), slot = defEdit.slot, f = norm(defEdit.filter);
   const list = (allAtts[slot] || []).filter((a) => !f || norm(a.displayname).includes(f) || norm(a.only || "").includes(f));
-  const chips = gunTokenChips(slot, [...tokens, ...builtinTokens()]).concat(list.map((a) => [a.name, `${esc(a.displayname)} <span class="sm">${a.only ? esc(a.only) : `${a.guns} guns`}</span>`, a.only ? "" : gunListTip(a)]));
-  chips.sort((a, b) => (set.has(b[0]) - set.has(a[0])));
-  $("defChips").innerHTML = chips.slice(0, 500).map(([t, l, tip]) => `<span class="chip ${set.has(t) ? "x" : ""}" data-tok="${esc(t)}" ${tip ? `title="${esc(tip)}"` : ""}>${l}</span>`).join("") || `<span class="hint">Nothing matches.</span>`;
-  $("defCount").textContent = `${tokens.length} attachment${tokens.length === 1 ? "" : "s"} excluded by default${prefs.defExcl ? " (your list)" : " (built-in list)"}`;
+  $("defChips").innerHTML = exclChipsHtml(slot, list, tokens);
+  const nGun = tokens.filter((t) => t.includes("::")).length, nAll = tokens.length - nGun;
+  $("defCount").textContent = `${nAll} excluded on every gun · ${nGun} on single guns${prefs.defExcl ? " (your list)" : " (built-in list)"}`;
 }
 function afterDefaultsChanged() {
   // finder / export pick up the new defaults straight away
@@ -437,8 +559,7 @@ function initDefaultsEditor() {
   $("defSearch").addEventListener("input", (e) => { defEdit.filter = e.target.value; renderDefaults(); });
   $("defChips").addEventListener("click", (e) => {
     const c = e.target.closest("[data-tok]"); if (!c) return;
-    const set = new Set(defaultTokenList());
-    set.has(c.dataset.tok) ? set.delete(c.dataset.tok) : set.add(c.dataset.tok);
+    const set = toggleEverywhere(new Set(defaultTokenList()), c.dataset.tok);
     prefs.defExcl = [...set]; savePrefs(); renderDefaults(); afterDefaultsChanged();
   });
   $("defBuiltin").addEventListener("click", () => { prefs.defExcl = null; savePrefs(); renderDefaults(); afterDefaultsChanged(); toast("Built-in default list restored."); });
@@ -486,7 +607,7 @@ async function startExportJob() {
   const o = ex.o[kind];
   const body = kind === "allBest"
     ? { kind: "best", classes: null, weapons: o.guns, metric: o.metric, shotguns: o.shotguns || "oneshot", lists: o.lists, per_gun: o.perGun, depth: o.depth, settings: batchSettings(o), firemode_pref: o.fire,
-      exclude_tokens: exclTokens(o), locks: o.locks }
+      exclude_tokens: exclTokens(o), locks: o.locks, tiebreak: tiebreakList() }
     : { kind: "stats", classes: o.classes, distances: parseDistances(o.distances), groups: o.groups, runs: o.runs, settings: batchSettings(o), firemode_pref: o.fire };
   try {
     const { id } = await api("/api/batch", body);
@@ -503,7 +624,10 @@ async function pollExportJob(key) {
   Object.assign(j, st);
   if (!$("exportModal").classList.contains("hidden") && jobKey() === key && needsJob()) { renderExRun(); buildTable(); }
   if (!st.done) setTimeout(() => pollExportJob(key), 1500);
-  else if (!st.error) toast(`Export table ready: ${st.rows} rows.`, 3000);
+  else {
+    storeResults();
+    if (!st.error) toast(`Export table ready: ${st.rows} rows.`, 3000);
+  }
 }
 
 function parseDistances(s) {

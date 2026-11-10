@@ -301,7 +301,8 @@ class Export(unittest.TestCase):
     def test_default_exclusions(self):
         ak = default_excludes_for(GD, "AK47")
         self.assertIn("Halbek Device", ak["Barrel"])
-        self.assertIn("DCL 120", ak["Optics"])
+        self.assertNotIn("DCL 120", ak.get("Optics", []))  # taken off the default list
+        self.assertIn("Chainsaw Grip", ak["Underbarrel"])
         self.assertNotIn("Heavy Buffer", ak.get("Other", []))
         self.assertIn("Heavy Buffer", default_excludes_for(GD, "M231")["Other"])
         self.assertNotIn("Heavy Buffer", default_excludes_for(GD, "COLT SMG 635").get("Other", []))  # M231 only
@@ -425,6 +426,90 @@ class OneShotAndClimb(unittest.TestCase):
         aims = [round(r["summary"]["aim_error"], 4) for r in rows if r["summary"]["oneshot_band"] == band]
         self.assertGreater(len(aims), 2)
         self.assertEqual(aims, sorted(aims))
+
+    def test_fire_point(self):
+        # with the gun model, hip-fire bullets leave the barrel (right of and below
+        # the crosshair, parallel to the view); aimed ones leave the sight part
+        from recoilsim.models import ModelLibrary
+        gd = GameData()
+        gd.use_models(ModelLibrary())
+        for aiming, want in ((False, (0.75, -0.712)), (True, (0.0, 0.0))):
+            cfg = gd.compile("AK47", {})
+            res = simulate(cfg, SimSettings(distance=50, aiming=aiming, runs=50, seed=1, gravity=False, shots=1))
+            first = np.nanmean(res.impacts[:, 0, :, :], axis=(0, 1))
+            self.assertAlmostEqual(first[0], want[0], places=2)
+            self.assertAlmostEqual(first[1], want[1], places=2)
+
+    def test_custom_tiebreak_keeps_handling_attachments(self):
+        # accuracy goal + handling as a tie-breaker: equal-accuracy setups go to the better handling
+        job = OptimizeJob(GD, {"weapon": "TYPE 88", "metric": "accuracy", "settings": {"compensation": 100},
+                               "depth": "quick", "lists": ["combined"], "top_n": 4, "tiebreak": ["handling", "recoil"]})
+        job._optimize()
+        rows = job.result["lists"]["combined"]
+        best = round(rows[0]["score"], 4)
+        hands = [r["handling"] for r in rows if round(r["score"], 4) == best]
+        self.assertEqual(hands, sorted(hands, reverse=True))
+        self.assertEqual(job.result["tiebreak"], ["handling", "recoil"])
+
+    def test_recoil_edit_roundtrip_and_override(self):
+        from recoilsim.recoil_edit import from_lua, to_lua
+        gd = GameData()
+        base = gd.base_recoil("AK47")
+        self.assertEqual(from_lua(to_lua(base)), base)
+        st = SimSettings(distance=50, runs=10, seed=3, gravity=False)
+        a = simulate(gd.compile("AK47", {"Barrel": "Compensator"}), st).impacts
+        gd.set_recoil_overrides({"AK47": base})  # unchanged values: same shots
+        b = simulate(gd.compile("AK47", {"Barrel": "Compensator"}), st).impacts
+        self.assertTrue(np.allclose(a, b, equal_nan=True))
+        edited = copy.deepcopy(base)
+        edited["aimCameraBody"]["x"][0][2] *= 2  # stronger climb
+        gd.set_recoil_overrides({"AK47": edited})
+        c = simulate(gd.compile("AK47", {"Barrel": "Compensator"}), st).impacts
+        self.assertGreater(np.nanmean(c[:, -1, 0, 1]), np.nanmean(a[:, -1, 0, 1]) + 0.2)
+
+    def test_recoil_designer_fits_a_path(self):
+        from recoilsim.recoil_fit import fit_recoil
+        pts = [[0, 0]] + [[0, 0.8 * i] for i in range(1, 12)] + [[0.6 * j, 8.8 + 0.15 * j] for j in range(1, 19)]
+        r = fit_recoil(GameData(), {"weapon": "AK47", "aiming": True, "distance": 50, "points": pts, "layers": "auto", "variance": 0.3})
+        self.assertLess(r["rms"], 0.5)
+        self.assertEqual(len(r["path"]), len(pts))
+        # free shots (None) are left to the recoil; a refit with fixed springs only changes the kicks
+        part = pts[:12] + [None] * 18
+        r2 = fit_recoil(GameData(), {"weapon": "AK47", "aiming": True, "distance": 50, "points": part, "layers": 3, "variance": 0})
+        self.assertEqual(len(r2["path"]), 30)
+        self.assertLess(r2["rms"], 0.2)
+        springs = {ax: [row[:2] + row[4:6] for row in r2["layers"][ax]] for ax in ("x", "y")}
+        r3 = fit_recoil(GameData(), {"weapon": "AK47", "aiming": True, "distance": 50, "points": part, "springs": springs, "variance": 0})
+        self.assertEqual([row[:2] + row[4:6] for row in r3["layers"]["x"]], springs["x"])
+        self.assertLess(r3["rms"], r2["rms"] + 0.05)
+        # every designed layer has its own recovery spring (paired by index), so the view snaps back
+        rec = r["recoil"]["aimCameraBodyRecovery"]
+        self.assertEqual(len(rec["x"]["layers"]), len(r["layers"]["x"]))
+        self.assertIsNotNone(r["settle"])
+        self.assertLess(r["settle"], 1.5)
+
+    def test_recoil_designer_recreates_a_gun(self):
+        """The G11K2's own pattern and per-shot spread, rebuilt from scratch."""
+        import numpy as np
+        from recoilsim.recoil_fit import fit_recoil, preview_path, split_layers
+        gd = GameData()
+        for fm in (0, 1):
+            base = {"weapon": "G11K2", "aiming": True, "distance": 50, "firemode_index": fm}
+            pv = preview_path(gd, {**base, "sigma": True})
+            r = fit_recoil(gd, {**base, "points": pv["path"], "spread": pv["sigma"], "layers": "auto"})
+            self.assertLess(r["rms"], 0.1)
+            self.assertLess(np.abs(np.array(r["sigma"]) - np.array(pv["sigma"])).mean(), 0.02)
+        # with the gun's own springs only the kicks are left: an exact match
+        sl = split_layers(gd.base_recoil("G11K2"), "aimCameraBody")
+        r = fit_recoil(gd, {**base, "points": pv["path"], "springs": {ax: [a[:2] + a[4:6] for a in sl[ax]] for ax in "xy"}})
+        self.assertLess(r["rms"], 0.005)
+        self.assertAlmostEqual(r["layers"]["x"][0][2], 1.5, places=2)
+
+    def test_controller_halves_camera_recoil(self):
+        cfg = GD.compile("AK47", {})
+        kb = mean_path(cfg, SimSettings(distance=50, runs=1, gravity=False))
+        pad = mean_path(cfg, SimSettings(distance=50, runs=1, gravity=False, controller=True))
+        self.assertLess(pad[-1, 1], kb[-1, 1] * 0.8)
 
     def test_shotgun_goal(self):
         job = OptimizeJob(GD, {"weapon": "SAWED OFF", "metric": "stk_torso", "settings": {"compensation": 100},

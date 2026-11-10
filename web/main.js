@@ -2,7 +2,7 @@
    every control to what it does. */
 "use strict";
 
-let setAimSeg, setStanceSeg, setViewSeg, setPatViewSeg;
+let setAimSeg, setStanceSeg, setViewSeg, setPatViewSeg, setInputSeg;
 
 /* ------------------------------------------------------------------ what gets saved */
 function uiState() {
@@ -54,7 +54,24 @@ function saveIsDefault(prev) {
   if (prev.view && prev.view !== state.view) return false;
   if (prev.settings && stableJSON(prev.settings) !== stableJSON(settings())) return false;
   if (prev.ui && stableJSON(prev.ui) !== stableJSON(uiState())) return false;
+  if (prev.recoilEdits && Object.keys(prev.recoilEdits).length) return false;
+  if (prev.exportOpts && stableJSON(prev.exportOpts) !== stableJSON(Object.fromEntries(EXPORT_SAVED.map((k) => [k, ex.o[k]])))) return false;
+  if (sessionPrefsChanged()) return false;
   return true;
+}
+/* preferences that belong to the work, not to the Settings panel: Start fresh resets them */
+const SESSION_PREFS = ["tiebreak", "defExcl", "exportFull", "finderFull"];
+function sessionPrefsChanged() {
+  return (tbPrefs().custom) || prefs.defExcl != null || !!prefs.exportFull || !!prefs.finderFull;
+}
+function resetSessionPrefs() {
+  for (const k of SESSION_PREFS) delete prefs[k];
+  prefs.defExcl = null;
+  savePrefs();
+  renderTieboxes();
+  if (typeof setExportFull === "function") setExportFull(false);
+  if (typeof setFinderFull === "function") setFinderFull(false);
+  if (typeof renderDefaults === "function" && $("exportModal") && !$("exportModal").classList.contains("hidden")) renderDefaults();
 }
 function offerPreviousSave() {
   const prev = state.prevSave;
@@ -71,10 +88,10 @@ function offerPreviousSave() {
   const bits = [];
   if (prev.settings) bits.push(`${prev.settings.distance} st`, prev.settings.aiming === false ? "hip fire" : "aimed");
   if (snaps) bits.push(`${snaps} saved pattern${snaps === 1 ? "" : "s"}`);
-  $("loadInfo").innerHTML = `Last time you had ${w ? `the <b>${esc(w.displayname)}</b>${atts ? ` with ${atts} attachment${atts === 1 ? "" : "s"}` : ""}` : "your own settings"}${bits.length ? ` (${bits.join(", ")})` : ""}. Starting fresh replaces that save once you change something.`;
+  $("loadInfo").innerHTML = `Last time you had ${w ? `the <b>${esc(w.displayname)}</b>${atts ? ` with ${atts} attachment${atts === 1 ? "" : "s"}` : ""}` : "your own settings"}${bits.length ? ` (${bits.join(", ")})` : ""}. Starting fresh replaces that save once you change something, and resets the tie-breakers, your default exclusion list and edited recoil (the Settings panel — field of view, sound, graphics — stays).`;
   openModal("loadModal");
   const close = () => { closeModal("loadModal"); state.awaitingLoadChoice = false; };
-  $("loadNo").onclick = () => { close(); state.prevSave = null; store(); };
+  $("loadNo").onclick = () => { close(); state.prevSave = null; clearResults(); resetSessionPrefs(); store(); };
   $("loadYes").onclick = async () => {
     // work from a copy: restoring settings saves as it goes, and that must not
     // overwrite the values still to be restored (it used to reset the gun)
@@ -83,10 +100,20 @@ function offerPreviousSave() {
     state.saved = JSON.parse(JSON.stringify(prev));
     state.snapshots = Array.isArray(save.snapshots) ? save.snapshots : [];
     state.excludes = save.excludes || {};
+    state.recoilEdits = save.recoilEdits && typeof save.recoilEdits === "object" ? save.recoilEdits : {};
     close();
     state.restoring = true;
     if (save.settings) applySavedSettings(save.settings);
     if (save.view) setView(save.view);
+    restoreExportOpts(save.exportOpts);
+    // results: the finder's lists, every-gun export tables, an imported sheet
+    const res = loadResults();
+    if (res) {
+      Object.assign(state.optResults, res.optResults || {});
+      if (res.lastOptWeapon) state.lastOptWeapon = res.lastOptWeapon;
+      for (const [k, j] of Object.entries(res.jobs || {})) ex.jobs[k] = j;
+      if (res.imported) ex.imported = res.imported;
+    }
     applyUi(save.ui);
     renderSnapList();
     await selectWeapon(name, (save.attachments || {})[name] || {});
@@ -95,6 +122,7 @@ function offerPreviousSave() {
     saveSettings();
     onLoadoutChanged();
     drawPattern(); renderCompare(); renderResults(state.lastDump && state.lastDump.summary);
+    if (save.dump) runDumps();  // the simulation result that was on screen
   };
 }
 
@@ -140,6 +168,7 @@ function showTab(tab) {
   document.querySelectorAll("#rightTabs [data-tab]").forEach((x) => x.classList.toggle("on", x.dataset.tab === tab));
   document.querySelectorAll("#rightPanel .pane").forEach((p) => p.classList.toggle("on", p.dataset.pane === tab));
   setTimeout(() => (tab === "stats" ? drawDamageGraph() : (drawPattern(), drawPerShot())), 10);
+  if (tab === "recoil") renderRecoilTab();
 }
 
 /* ------------------------------------------------------------------ preferences */
@@ -154,7 +183,7 @@ function applyPrefsToControls() {
 }
 function wirePrefs() {
   const set = (k, v) => { prefs[k] = v; savePrefs(); applyPrefsToControls(); drawPattern(); };
-  $("pFov").addEventListener("input", (e) => set("fov", +e.target.value));
+  $("pFov").addEventListener("input", (e) => { prefs.fovSet = true; set("fov", +e.target.value); });
   $("pGhost").addEventListener("input", (e) => set("ghost", +e.target.value));
   $("pVol").addEventListener("input", (e) => set("vol", +e.target.value));
   $("pTracers").addEventListener("change", (e) => set("tracers", e.target.checked));
@@ -169,6 +198,18 @@ function wirePrefs() {
 }
 
 /* ------------------------------------------------------------------ start-up */
+/* RecoilSim was updated while it was running: the page is new but the server
+   still runs the old code until it's restarted (a server from before this
+   check has no /api/stale at all, which says the same). */
+let staleShown = false;
+async function checkStale() {
+  if (staleShown) return;
+  try {
+    const r = await fetch("/api/stale", { cache: "no-store" });
+    const stale = r.status === 404 || (r.ok && (await r.json()).stale);
+    if (stale) { staleShown = true; showError("RecoilSim was updated while it was running — close it and start it again to load the new version (until then some features won't work)."); }
+  } catch (e) { /* server not reachable: other errors will say so */ }
+}
 async function init() {
   loadPrefs();
   loadStore();
@@ -180,6 +221,9 @@ async function init() {
   });
   window.addEventListener("error", (e) => showError(`Error: ${e.message}`));
   window.addEventListener("unhandledrejection", (e) => showError(`Error: ${(e.reason && e.reason.message) || e.reason}`));
+  bootMsg("Loading guns and attachments…");
+  checkStale();
+  window.addEventListener("focus", checkStale);
   const cat = await api("/api/catalog");
   state.catalog = cat;
   mergeNewDefaultExcludes();
@@ -192,17 +236,23 @@ async function init() {
   $("aimPoint").value = "torso";
   initFinder();
   initExport();
+  wireRecoilTab();
   wirePrefs();
   if (innerWidth < 760) collapse("rightPanel", true);
   const first = findWeapon("AK47") ? "AK47" : allWeapons()[0].name;
   buildTargetGeometry();
   wireEvents();
   document.querySelectorAll('input[type="range"]').forEach(paintRange);
+  bootMsg("Loading the gun model…");
+  if (!R) bootDone();  // no 3D view: nothing to wait for
+  setTimeout(bootDone, 20000);  // never keep the screen up forever
   await selectWeapon(first, {});
+  bootMsg("Building the 3D range…");
   renderSnapList();
   renderResults(null);
   layoutDock();
   requestAnimationFrame(frame);
+  await bootReady;
   offerPreviousSave();
   warmupRtt();
 }
@@ -210,6 +260,7 @@ async function init() {
 function wireEvents() {
   setAimSeg = seg("aimSeg", (v) => setAim(v === "aim"));
   setStanceSeg = seg("stanceSeg", (v) => { state.stance = v; onLoadoutChanged(); });
+  setInputSeg = seg("inputSeg", (v) => { state.controller = v === "pad"; onLoadoutChanged(); });
   setViewSeg = seg("viewSeg", (v) => setView(v));
   setPatViewSeg = seg("patViewSeg", (v) => { state.patternView = v; drawPattern(); saveSettings(); });
 
@@ -359,4 +410,4 @@ function wireEvents() {
   gl.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
-init().catch((e) => { showError(`Failed to start: ${e.message}`); console.error(e); });
+init().catch((e) => { bootDone(); showError(`Failed to start: ${e.message}`); console.error(e); });

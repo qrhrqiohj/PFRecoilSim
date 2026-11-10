@@ -16,7 +16,8 @@ from urllib.parse import parse_qs, urlparse
 import numpy as np
 
 from .analysis import METRICS, apply_compensation, heatmap, mean_path, one_shot_damage, summarize
-from .gamedata import DATA_DIR, SLOTS, GameData
+from .gamedata import DATA_DIR, SLOTS, GameData, class_key
+from .recoil_edit import from_lua, sanitize, to_lua
 from .models import ModelLibrary, weapon_scene
 from .export import BatchJob, gun_stats_sheet, read_sheet, to_csv, to_xlsx
 from .optimizer import JobManager, default_exclude_map
@@ -53,6 +54,7 @@ class App:
     def __init__(self, data_path=None):
         self.gd = GameData(data_path)
         self.models = ModelLibrary()
+        self.gd.use_models(self.models)
         self.scene_cache = {}
         self.jobs = JobManager(data_path)
         self.data_path = data_path
@@ -81,15 +83,18 @@ class App:
             trigger_holds=s.get("trigger_holds") or None,
             track_end=float(s["track_end"]) if s.get("track_end") else None,
             track_start=float(s["track_start"]) if s.get("track_start") else None,
+            controller=bool(s.get("controller", False)),
         )
 
     def attachment_groups(self, weapon, locked):
         """Per slot: groups of attachments with identical shooting stats, and
         which ones change nothing at all (never worth simulating)."""
-        from .optimizer import slot_groups_for
+        from .optimizer import HANDLING_KEYS, slot_groups_for
         base = {k: v for k, v in locked.items() if v and k in SLOTS}
         free = [s for s in SLOTS if s not in locked]
-        groups = slot_groups_for(self.gd, weapon, base, free)
+        # handling counts as a difference here: a laser that only speeds up
+        # sprint-to-aim isn't "the same as an empty slot"
+        groups = slot_groups_for(self.gd, weapon, base, free, None, HANDLING_KEYS)
         out = {}
         for s in free:
             out[s] = [{"rep": g["rep"], "members": [m for m in g["members"] if m], "no_effect": g["no_effect"]}
@@ -104,14 +109,17 @@ class App:
             for w in self.gd.weapon_names():
                 for slot, opts in self.gd.attachment_options(w).items():
                     for o in opts:
-                        e = seen.setdefault((slot, o["name"]), {"name": o["name"], "displayname": o["displayname"], "guns": []})
+                        e = seen.setdefault((slot, o["name"]), {"name": o["name"], "displayname": o["displayname"], "guns": [], "ids": []})
                         e["guns"].append(self.gd.weapon_entry(w)["data"].get("displayname") or w)
+                        e["ids"].append(w)
             out = {s: [] for s in SLOTS}
             for (slot, _n), e in seen.items():
                 out[slot].append({"name": e["name"], "displayname": e["displayname"], "guns": len(e["guns"]),
                                   "only": e["guns"][0] if len(e["guns"]) == 1 else None,
                                   # every gun that can use it, for the hover text
-                                  "gun_list": sorted(e["guns"])})
+                                  "gun_list": sorted(e["guns"]),
+                                  # [weapon, display name] in menu order, for per-gun exclusions
+                                  "gun_ids": [[w, d] for w, d in sorted(zip(e["ids"], e["guns"]), key=lambda x: (class_key(self.gd.weapon_entry(x[0])["class"]), self.gd.rank_key(x[0])))]})
             for lst in out.values():
                 lst.sort(key=lambda e: (-e["guns"], e["displayname"].lower()))
             self._all_atts = out
@@ -367,6 +375,8 @@ def make_handler(app: App):
             try:
                 u = urlparse(self.path)
                 q = {k: v[0] for k, v in parse_qs(u.query).items()}
+                if u.path == "/api/stale":
+                    return self._send(200, {"stale": _code_changed()})
                 if u.path == "/api/catalog":
                     return self._send(200, {"classes": app.gd.catalog(), "meta": app.gd.meta,
                                             "metrics": METRICS, "aim_points": AIM_POINTS,
@@ -417,6 +427,29 @@ def make_handler(app: App):
                     except Exception as e:
                         return self._send(400, {"error": f"Couldn't read that file: {e}"})
                 body = self._body()
+                # edited recoil (Recoil tab) comes with every request's settings
+                if isinstance(body.get("settings"), dict):
+                    app.gd.set_recoil_overrides(body["settings"].get("recoil_overrides") or {})
+                if u.path == "/api/recoil":
+                    # the game's own recoil of a gun (for the Recoil tab), and its text form
+                    base = app.gd.base_recoil(body["weapon"])
+                    return self._send(200, {"recoil": base})
+                if u.path == "/api/recoil/lua":
+                    return self._send(200, {"text": to_lua(sanitize(body["recoil"]))})
+                if u.path == "/api/recoil/parse":
+                    try:
+                        return self._send(200, {"recoil": from_lua(body.get("text") or "")})
+                    except ValueError as e:
+                        return self._send(400, {"error": f"Couldn't read that recoil: {e}"})
+                if u.path == "/api/recoil/path":
+                    from .recoil_fit import preview_path
+                    return self._send(200, _clean(preview_path(app.gd, body)))
+                if u.path == "/api/recoil/fit":
+                    from .recoil_fit import fit_recoil
+                    try:
+                        return self._send(200, _clean(fit_recoil(app.gd, body)))
+                    except ValueError as e:
+                        return self._send(400, {"error": str(e)})
                 if u.path == "/api/model":
                     atts = {k: v for k, v in (body.get("attachments") or {}).items() if v}
                     key = (body["weapon"], tuple(sorted(atts.items())))
@@ -502,6 +535,7 @@ def make_handler(app: App):
             raw_path.unlink()
             app.gd = GameData()
             app.models = ModelLibrary()
+            app.gd.use_models(app.models)
             app.scene_cache.clear()
             app._all_atts = None
             app.jobs.reset_pool()
@@ -519,6 +553,19 @@ class QuietServer(ThreadingHTTPServer):
         if isinstance(sys.exc_info()[1], (ConnectionError, OSError)):
             return  # browser closed the connection; harmless
         super().handle_error(request, client_address)
+
+
+_CODE_DIR = __import__("pathlib").Path(__file__).resolve().parent
+_STARTED = time.time()
+
+
+def _code_changed() -> bool:
+    """True when RecoilSim's Python files were replaced after this server
+    started (an update was copied in): it is still running the old code."""
+    try:
+        return any(p.stat().st_mtime > _STARTED + 1 for p in _CODE_DIR.glob("*.py"))
+    except OSError:
+        return False
 
 
 def serve(port=8765, open_browser=True, data_path=None):

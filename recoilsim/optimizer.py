@@ -58,7 +58,28 @@ STUD_RES = 1e-4
 HANDLING_RES = 1e-3     # 0.1 % handling: smaller differences are ties
 OSAVG_RES = 0.01        # average one-shot range: differences under 0.01 st are ties (setups that
                         # change neither pellets nor damage tie exactly: same random numbers)
-RECOIL_TIE = 1e-3       # one-shot goal: recoil differences under 0.001 st distance from aim are ties
+RECOIL_TIE = STUD_RES   # recoil (distance from aim) differences under 0.0001 st are ties, as in the
+                        # accuracy goal (a stock that only takes 0.0004 st off still counts)
+
+# Tie-breakers after the goal (and, for First STK goals, after the range itself):
+# name -> (parts key, +1 lower is better / -1 higher is better, smallest difference that counts)
+TIEBREAKS = {
+    "recoil": ("aim", 1, STUD_RES),          # average distance from the aim point (after recoil control)
+    "handling": ("handling", -1, 1e-3),     # aim / walk / sprint / equip speed vs the bare gun
+    "damage": ("mag_damage", -1, 1e-2),     # damage per mag
+    "climb": ("climb", 1, STUD_RES),        # recoil climb before recoil control
+    "spread": ("spread", 1, STUD_RES),      # random spread
+}
+HANDLING_KEYS = ("aimspeed", "unaimspeed", "walkspeed", "aimwalkspeedmult", "sprintspeed", "unsprintspeed",
+                 "equipspeed", "unequipspeed", "magnifyspeed", "unmagnifyspeed")
+
+
+def default_tiebreak(metric, recoil_first=False):
+    """The built-in order: First STK goals — handling then recoil for one-shots,
+    recoil then handling when it takes more than one shot; other goals — damage per mag."""
+    if metric in STK_METRICS:
+        return ["recoil", "handling"] if recoil_first else ["handling", "recoil"]
+    return ["damage"]
 
 
 def snap(v, res):
@@ -93,9 +114,10 @@ def _str_keys(o):
     return o
 
 
-def signature(cfg):
-    """Hash of everything that affects shooting: equal hashes shoot identically."""
-    rel = _str_keys({k: cfg.stats.get(k) for k in RELEVANT_KEYS})
+def signature(cfg, extra_keys=()):
+    """Hash of everything that affects shooting (plus `extra_keys`, e.g. the handling
+    stats when handling breaks ties): equal hashes shoot identically."""
+    rel = _str_keys({k: cfg.stats.get(k) for k in RELEVANT_KEYS + tuple(extra_keys)})
     blob = json.dumps(rel, sort_keys=True, default=str)
     return hashlib.sha1(blob.encode()).hexdigest()
 
@@ -103,9 +125,9 @@ def signature(cfg):
 # Joke / novelty attachments left out of searches by default (the user can put
 # them back). "*" applies to every gun; other keys only to that gun.
 DEFAULT_EXCLUDES = {
-    "*": ["DCL 120", "Halbek Device", "Oil Filter", "Oil Filter (Alt)", "Muffler", "Muffler (Alt)",
+    "*": ["Halbek Device", "Oil Filter", "Muffler", "Chainsaw Grip",
           "Ballistics Tracker", "Canted Acog Scope", "Canted Animu Sight", "Canted Furro Sight",
-          "Suppressor..?", "M107 .17 Wildcat", ".17 Wildcat", "KS HARPOON", ".223 Remington", ".223 Remington (Alt)"],
+          "M107 .17 Wildcat", ".17 Wildcat", "KS HARPOON", ".223 Remington", ".223 Remington (Alt)"],
     "M231": ["Heavy Buffer"],
 }
 
@@ -143,9 +165,11 @@ def default_excludes_for(gd: GameData, weapon: str, tokens=None) -> dict:
     return out
 
 
-def slot_groups_for(gd: GameData, weapon: str, base_lock: dict, slots, exclude: dict | None = None):
+def slot_groups_for(gd: GameData, weapon: str, base_lock: dict, slots, exclude: dict | None = None, extra_keys=()):
     """{slot: [{"rep": name|None, "members": [...]}, ...]} grouping identical options.
-    The group containing the empty slot always has rep None."""
+    The group containing the empty slot always has rep None. extra_keys: more stats
+    that make options different (the handling stats when handling breaks ties, so a
+    laser that only speeds up sprint-to-aim isn't lumped in with an empty slot)."""
     options = gd.attachment_options(weapon)
     out = {}
     for slot in slots:
@@ -153,12 +177,12 @@ def slot_groups_for(gd: GameData, weapon: str, base_lock: dict, slots, exclude: 
         candidates = [None] + [o["name"] for o in options.get(slot, [])]
         candidates = [c for c in candidates if (c or "") not in excluded] or [None]
         groups = {}
-        none_sig = signature(gd.compile(weapon, base_lock))
+        none_sig = signature(gd.compile(weapon, base_lock), extra_keys)
         for opt in candidates:
             atts = dict(base_lock)
             if opt:
                 atts[slot] = opt
-            sig = none_sig if opt is None else signature(gd.compile(weapon, atts))
+            sig = none_sig if opt is None else signature(gd.compile(weapon, atts), extra_keys)
             groups.setdefault(sig, []).append(opt)
         lst = []
         for sig, members in groups.items():
@@ -176,6 +200,8 @@ def _init_worker(data_path):
     global _WORKER_GD
     _lower_priority()
     _WORKER_GD = GameData(data_path)
+    from .models import ModelLibrary
+    _WORKER_GD.use_models(ModelLibrary())
 
 
 def _lower_priority():
@@ -264,6 +290,8 @@ def evaluate(gd, weapon, attachments, settings, metric, runs, seed, want_summary
     parts["handling"] (always filled) ranks equal ranges before recoil does."""
     health = float(settings.get("health", 100))
     comp = float(settings.get("compensation", 0)) / 100.0
+    # edited recoil from the Recoil tab (search workers get it with every task)
+    gd.set_recoil_overrides(settings.get("recoil_overrides") or {})
     cfg = gd.compile(weapon, attachments)
     shots = settings.get("shots") or None
     if not shots and metric not in ("damage", "dps"):
@@ -291,6 +319,7 @@ def evaluate(gd, weapon, attachments, settings, metric, runs, seed, want_summary
         runs=runs,
         seed=seed,
         keep_rays=metric in STK_METRICS,
+        controller=bool(settings.get("controller", False)),
     )
     res = simulate(cfg, st)
     oneshot = metric in STK_METRICS
@@ -309,6 +338,9 @@ def evaluate(gd, weapon, attachments, settings, metric, runs, seed, want_summary
         batches = np.array([[p["climb"], p["spread"]] for p in sl])
     if comp > 0:
         apply_compensation(res, mean_path(cfg, st), comp)
+    # tie-breakers available for every goal: distance from aim (after recoil control), damage per mag
+    parts["aim"] = float(np.mean(aim_error(res)))
+    parts["mag_damage"] = float(np.mean(res.damage.sum(axis=tuple(range(1, res.damage.ndim))))) if getattr(res, "damage", None) is not None else 0.0
     if oneshot:
         chance = float(settings.get("oneshot_chance") or ONESHOT_CHANCE * 100) / 100.0
         # first STK range: the fewest shots to kill this part at the gun's best range
@@ -429,6 +461,10 @@ class OptimizeJob:
         self._osreach = {}
         self._oscov = {}
         self._recfirst = {}
+        self._parts = {}
+        # the user's own tie-break order (None = the built-in one), e.g. ["recoil", "handling"]
+        tb = self.req.get("tiebreak")
+        self.tiebreak = [t for t in tb if t in TIEBREAKS] if isinstance(tb, list) else None
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
@@ -463,46 +499,67 @@ class OptimizeJob:
         mag) and are treated as ties, so they can't rank an attachment above none."""
         return RESOLUTION.get(self.metric, 1e-4)
 
+    def _order(self, k):
+        """Tie-break order for setup key k."""
+        if self.tiebreak is not None:
+            return self.tiebreak
+        return default_tiebreak(self.metric, self._recfirst.get(k, False))
+
+    def _uses_handling(self):
+        return "handling" in (self.tiebreak if self.tiebreak is not None else default_tiebreak(self.metric))
+
+    def _tie_val(self, k, name):
+        key, sign, res = TIEBREAKS[name]
+        if name == "recoil" and key not in self._parts.get(k, {}):
+            return round(-self._secondary.get(k, 0.0) / res)
+        return round(sign * self._parts.get(k, {}).get(key, 0.0) / res)
+
     def _rank_key(self, score, attachments):
-        """Primary metric down to the shown resolution; ties go to more damage
-        per mag (one-shot range: less recoil, i.e. closer to the aim point),
-        then fewer attachments."""
+        """The goal down to the shown resolution, then (First STK goals) reach,
+        length and average of the range, then the tie-breakers in order (the
+        user's own, or the built-in one), then fewer attachments."""
         better_lower = METRICS[self.metric]["better"] == "lower"
         primary = round((score if better_lower else -score) / self.res)
-        sec = -self._secondary.get(self._key(attachments), 0.0)
+        k = self._key(attachments)
+        head = (primary,)
         if self.oneshot:
-            # first STK range, then reach / length / average range, then handling and
-            # recoil (distance from aim) — recoil first for setups that need several
-            # shots, handling first for one-shots
-            k = self._key(attachments)
-            reach = -round(self._osreach.get(k, 0.0) / self.res)
-            cov = -round(self._oscov.get(k, 0.0) / self.res)
-            avg = -round(self._osavg.get(k, 0.0) / OSAVG_RES)
-            hand = -round(self._handling.get(k, 0.0) / HANDLING_RES)
-            rec = round(sec / STUD_RES)
-            t1, t2 = (rec, hand) if self._recfirst.get(k) else (hand, rec)
-            return (primary, reach, cov, avg, t1, t2, len(k))
-        return (primary, sec, len(self._key(attachments)))
+            head += (-round(self._osreach.get(k, 0.0) / self.res), -round(self._oscov.get(k, 0.0) / self.res),
+                     -round(self._osavg.get(k, 0.0) / OSAVG_RES))
+        tiers = tuple(self._tie_val(k, n) for n in self._order(k))
+        return head + tiers + (len(k),)
+
+    def _key_len(self):
+        """How many leading parts of _rank_key decide a ranking (before fewer attachments)."""
+        n = len(self.tiebreak) if self.tiebreak is not None else len(default_tiebreak(self.metric))
+        return 1 + (3 if self.oneshot else 0) + n
+
+    def _strip_tiers(self):
+        """Do tie-breakers decide whether an attachment earns its slot? Always for
+        First STK goals and for a custom order; the built-in order of the other
+        goals only ranks (an attachment that adds damage per mag but doesn't
+        change the goal is still dropped)."""
+        return self.oneshot or self.tiebreak is not None
 
     def _tiers_worse(self, c, a):
-        """First STK goal, equal range: is setup c worse than a on reach, length and
-        average range, then handling and recoil (recoil first when both setups
-        need more than one shot)? +1 worse, -1 better, 0 tie."""
+        """Equal goal: is setup c worse than a on the First STK range details, then
+        the tie-breakers in order? +1 worse, -1 better, 0 tie."""
         kc, ka = self._key(c), self._key(a)
-        for d, res in ((self._osreach, self.res), (self._oscov, self.res)):
-            x = d.get(ka, 0.0) - d.get(kc, 0.0)
-            if abs(x) >= res:
-                return 1 if x > 0 else -1
-        o = self._osavg.get(ka, 0.0) - self._osavg.get(kc, 0.0)
-        if abs(o) >= OSAVG_RES:
-            return 1 if o > 0 else -1
-        h = self._handling.get(ka, 0.0) - self._handling.get(kc, 0.0)
-        r = self._secondary.get(ka, 0.0) - self._secondary.get(kc, 0.0)
-        tiers = [(h, HANDLING_RES), (r, RECOIL_TIE)]
-        if self._recfirst.get(ka) and self._recfirst.get(kc):
-            tiers.reverse()
-        for x, res in tiers:
-            if abs(x) >= res:
+        if self.oneshot:
+            for d, res in ((self._osreach, self.res), (self._oscov, self.res)):
+                x = d.get(ka, 0.0) - d.get(kc, 0.0)
+                if abs(x) >= res:
+                    return 1 if x > 0 else -1
+            o = self._osavg.get(ka, 0.0) - self._osavg.get(kc, 0.0)
+            if abs(o) >= OSAVG_RES:
+                return 1 if o > 0 else -1
+        if self.tiebreak is not None:
+            order = self.tiebreak
+        else:
+            # built-in: recoil first only when both setups need more than one shot
+            order = default_tiebreak(self.metric, self._recfirst.get(ka) and self._recfirst.get(kc))
+        for n in order:
+            x = self._tie_val(kc, n) - self._tie_val(ka, n)  # lower is better
+            if x:
                 return 1 if x > 0 else -1
         return 0
 
@@ -556,6 +613,7 @@ class OptimizeJob:
             self._osreach[self._key(a)] = r[5].get("os_reach", 0.0)
             self._oscov[self._key(a)] = r[5].get("os_cov", 0.0)
             self._recfirst[self._key(a)] = bool(r[5].get("recoil_first", False))
+            self._parts[self._key(a)] = r[5]
         return out
 
     def _run(self):
@@ -593,7 +651,8 @@ class OptimizeJob:
 
         # 1) group attachments with identical shooting stats
         self.stage = "Finding attachments that change the shooting"
-        groups = slot_groups_for(self.gd, weapon, base_lock, free_slots, self.req.get("exclude"))
+        groups = slot_groups_for(self.gd, weapon, base_lock, free_slots, self.req.get("exclude"),
+                                 HANDLING_KEYS if self._uses_handling() else ())
         for s in SLOTS:
             if s in locked:
                 groups[s] = [{"rep": locked[s] or None, "members": [locked[s] or None], "no_effect": False}]
@@ -807,9 +866,9 @@ class OptimizeJob:
                 d = raw(c, crit) - raw(a, crit)
                 if d >= res:
                     return True
-                if crit == "combined" and self.oneshot and d > -res:
-                    # same one-shot range: an attachment earns its slot by better
-                    # handling, or (same handling) by noticeably less recoil
+                if crit == "combined" and self._strip_tiers() and d > -res:
+                    # same goal: an attachment earns its slot on the tie-breakers
+                    # (e.g. better handling, or noticeably less recoil)
                     return self._tiers_worse(c, a) > 0
                 return False
 
@@ -838,7 +897,7 @@ class OptimizeJob:
                     stripped.append(b)
                 if len(stripped) >= top_n * 2:
                     break
-            plen = 6 if (crit == "combined" and self.oneshot) else 1
+            plen = self._key_len() if crit == "combined" and self._strip_tiers() else 1
             picks[crit] = self._diverse_top(sorted(stripped, key=keyf), keyf, top_n, plen)
         self.stage = "Final ranking with more mag dumps"
         union = []
@@ -916,9 +975,9 @@ class OptimizeJob:
                         diff, se = paired(r, k, crit)
                         if better(value(r, crit), value(k, crit), crit) and abs(diff) > 2 * se and abs(diff) >= res_of(crit):
                             continue
-                        if crit == "combined" and self.oneshot and abs(diff) < res_of(crit) and \
+                        if crit == "combined" and self._strip_tiers() and abs(diff) < res_of(crit) and \
                                 self._tiers_worse(k["attachments"], r["attachments"]) > 0:
-                            continue  # same one-shot range, better handling or less recoil
+                            continue  # same goal, better on the tie-breakers
                         return True
                 return False
             rows = [r for r in rows if not redundant(r)]
@@ -936,6 +995,7 @@ class OptimizeJob:
         self.result = {
             "metric": self.metric,
             "metric_label": METRICS[self.metric]["label"],
+            "tiebreak": self.tiebreak,
             "better": METRICS[self.metric]["better"],
             "baseline": {"score": base_raw[0], "score_err": base_raw[1], "attachments": base_lock,
                          "climb": base_raw[5]["climb"], "spread": base_raw[5]["spread"],

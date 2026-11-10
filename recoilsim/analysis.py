@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import math
+import warnings
 
 import numpy as np
 
@@ -16,6 +17,9 @@ def mean_path(cfg, st: SimSettings, track: bool = False):
     shot. A player who has learned the pattern pulls against this path."""
 
     det = copy.deepcopy(cfg)
+    # recoil only: the barrel's fixed offset from the crosshair (hip fire) isn't
+    # recoil, so pulling against the pattern doesn't remove it
+    det.pose = None
     for group in det.recoil.values():
         if not isinstance(group, dict):
             continue
@@ -61,7 +65,11 @@ def kill_stats(res: SimResult, health: float):
     first = np.where(any_kill, killed.argmax(axis=1), -1)
     t_sample = np.array(plan.sample_times)
     t0 = t_sample[0] if len(t_sample) else 0.0
-    travel = np.nanmean(np.where(np.isfinite(res.travel_time), res.travel_time, np.nan), axis=2)
+    # average travel time of each shot's pellets that arrive (a shot none of whose
+    # pellets reach the target is NaN; computed by hand so numpy doesn't warn about it)
+    ok = np.isfinite(res.travel_time)
+    n_ok = ok.sum(axis=2)
+    travel = np.where(n_ok > 0, np.where(ok, res.travel_time, 0.0).sum(axis=2) / np.maximum(n_ok, 1), np.nan)
     ttk = np.full(per_shot.shape[0], np.nan)
     stk = np.full(per_shot.shape[0], np.nan)
     idx = np.where(any_kill)[0]
@@ -510,14 +518,17 @@ def summarize(res: SimResult, st: SimSettings, health: float):
     finite = np.isfinite(imp[..., 0]) & np.isfinite(imp[..., 1])
     xs = imp[..., 0][finite]
     ys = imp[..., 1][finite]
-    per_shot_mean = np.nanmean(np.where(finite[..., None], imp, np.nan), axis=(0, 2))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # a shot no bullet of reaches: NaN, fine
+        per_shot_mean = np.nanmean(np.where(finite[..., None], imp, np.nan), axis=(0, 2))
+        shot_mean = np.nanmean(np.where(finite[..., None], imp, np.nan), axis=0, keepdims=True)
     per_shot_hit = hit.mean(axis=(0, 2))
     dist = st.distance
     to_deg = lambda studs: math.degrees(math.atan2(studs, dist))
     spread_x = float(np.std(xs)) if xs.size else 0.0
     spread_y = float(np.std(ys)) if ys.size else 0.0
     # spread around each shot's average position (what remains for a perfect controller)
-    resid = imp - np.nanmean(np.where(finite[..., None], imp, np.nan), axis=0, keepdims=True)
+    resid = imp - shot_mean
     resid = resid[finite]
     rand_r = float(np.sqrt(np.mean(np.sum(resid ** 2, axis=-1)))) if resid.size else 0.0
     out = {

@@ -13,18 +13,48 @@ heatmap, or let the optimiser find the best attachment setup for a range.
 3. Your browser opens the range at `http://127.0.0.1:8765/`. Keep the black
    console window open while you use it; close it to quit.
 
-Any OS: `python run.py` (options: `--port 9000`, `--no-browser`).
+Any OS: `python run.py` (options: `--port 9000`, `--no-browser`, `--data
+path/to/game_data.json.gz`).
+
+After copying in a new version, close RecoilSim and start it again: the page
+loads the new files straight away, but the server keeps running the old code
+until it's restarted. If that happens, a banner at the top says so.
 
 ## Starting up
 
-RecoilSim always starts from its defaults (AK-47, 50 studs, aimed, no
+A loading screen covers the window until the 3D range has drawn the gun, then
+fades out. RecoilSim always starts from its defaults (AK-47, 50 studs, aimed, no
 attachments). If your last session changed anything, it asks whether to pick up
 where you left off or start fresh; if it didn't, it just starts. Loading brings
-back the gun and its attachments (per gun), every Setup setting including fire
-mode and recoil control, 1st / 3rd person and the camera orbit, the simulation
-settings, sound, playback speed, the pattern view / fit / zoom, the open tab and
-hidden panels, saved patterns, and the setup finder's goal, sight, recoil
-control, depth and exclusions. Display preferences (gear icon) are always kept.
+back everything from last time:
+
+* the gun and its attachments (per gun), every Setup setting (fire mode,
+  recoil control, input, shots, click rate…), 1st / 3rd person and the camera
+  orbit, sound, playback speed, the pattern view / fit / zoom, the open tab and
+  hidden panels, and saved patterns;
+* the simulation that was on screen (it's run again: results that size aren't
+  stored);
+* edited recoil (Recoil tab), per gun;
+* the setup finder's goal, scenario, sight, recoil control, depth, exclusions
+  and its **results** (the last few guns searched);
+* every export option (scenario, goal, guns, exclusions, locks…), finished or
+  stopped **every-gun tables**, and an imported sheet.
+
+The Settings panel (gear icon: field of view, sound, graphics…) is always kept.
+*Start fresh* resets everything else straight away — the tie-breakers go back to
+*Default*, the default exclusion list to the built-in one, the finder and
+export leave full screen, stored results are dropped — and the old session's
+save is replaced once you change something. (A session that only changed
+recoil, export options, tie-breakers or exclusions also gets the question.)
+
+The finder's and the export's scenarios start from the range's the first time
+you open them; after that they keep what you set there, also when you close and
+reopen them (*Copy from range* takes the range's values again).
+
+Gun classes are listed in the game's loadout order everywhere: primaries
+(assault rifles, battle rifles, carbines, shotguns, PDWs, DMRs, LMGs, sniper
+rifles), then secondaries (pistols, machine pistols, revolvers, other), each
+class in unlock-rank order.
 
 ## What's on screen
 
@@ -39,8 +69,9 @@ Hide either panel with its panel icon (or **[** / **]**) to see more of the rang
 | **Range** (background) | Endless baseplate and back wall with the target dummy at the chosen distance. In **1st person** *Aimed* puts the gun in the game's aim-down-sights pose (optics zoom, scopes black out the edges) and the gun fades so the target stays visible; *Hip fire* uses the hip pose. **3rd person** shows the gun on a stand; right-drag (or middle-drag, which works even with Mouse aim on) to orbit, scroll to zoom. **Hold the left mouse button** on the range to shoot and let go to stop: the magazine carries on from where it stopped on the next press, and the recoil springs keep recovering during the pause exactly as in game. Presses and releases follow the game's trigger code: on semi-auto and burst guns each click is one trigger pull, clicks while the gun is still cycling are ignored, letting go early cuts a burst short unless the gun has burst lock, binary triggers also fire on release, force-capped guns ignore clicks until the cap allows, and auto-burst guns (e.g. the AN-94's 1800 rpm pair, which restarts with every pull) wait 60 / fire-cap after you let go. With recoil control above 0 %, the view and gun also show the shooter pulling against the climb. Tracers fly with real bullet travel time and holes stay until you clear them. |
 | **Dock** (bottom) | *Fire mag* empties a whole magazine (**F**; again to stop), 1st / 3rd person (**V**), playback speed (takes effect immediately, even mid-magazine), sound, new magazine (**R**) and clear bullet holes (**C**, also clears the shots in the pattern). Above it the read-out shows the fire mode and **fire rate** (while firing: the live rate of the last few shots, so burst rates, auto-burst and heat ramp-up show), ammo left, hits, head / torso / limb hits, damage and the kill time. |
 | **Analysis → Pattern** (right) | Front view of the target at range with the exact hitboxes. *Heatmap* / *Shots* / *Both* switch what's drawn; − / + (or the mouse wheel) zoom and the fit button switches between fitting everything drawn and fitting the target. **Simulate** runs any number of full magazines (1 to 100 000) in one go; with *Auto* on it re-runs whenever the setup changes, and the bin icon (or **X**) clears the result. The six key results are shown as tiles (hover *Climb* / *Spread* / *Dist. from aim* — the average distance of every bullet from where you aim — for what they mean); *Show all results* adds six more and the hit chance of every shot in the mag. **Compare**: *Save pattern* keeps the current heatmap and numbers (up to 6). Saved patterns are drawn in their own colour as outlines of the areas holding 50 % (solid), 80 % (dashed) and 95 % (dotted) of their bullets plus their average recoil path, and a table compares them with the current setup (green / red = better / worse). The eye hides one, × deletes it. |
+| **Analysis → Recoil** | The gun's own recoil values (before attachments, which still apply on top as in game), per stance (aimed / hip fire) and part: **Camera** (turns the view, and with it the gun and the bullets: the main climb), **Rotational** (turns the gun in front of the camera), **Translational** (moves it, mostly the visible kick back) and **Head Camera** (moves only what you see; bullets don't follow it). Every axis lists its spring layers — damping, speed, mean kick, variance — and its recovery springs with their delay: layer 1 switches to recovery spring 1, layer 2 to recovery spring 2 and so on, once no shot has come for the delay (on most automatics that also happens between shots). Edit any number, **+ layer** / **×** to add or remove layers. Edited guns are marked *edited* and use their recoil everywhere (range, pattern, finder, export); **Reset** goes back to the game's; **Blank** sets every value (aimed and hip, recovery included) to 0 with one layer per axis, to build recoil from scratch. **Export** gives the recoil in the game's own text format (the weapon editor's recoil export, `gunData.recoil["aimRotation"] = {...}`) to copy or save as .lua; **Import** reads that format back. **Design…** opens the recoil designer (below). |
 | **Analysis → Gun stats** | Compiled stats of the current setup and the damage-over-range graph. Dots on the curves mark the **shots-to-kill breakpoints** with their range, coloured bands underneath show shots to kill, and hovering reads off damage and shots to kill at any range. Scroll to zoom, drag to pan, double-click to reset. |
-| **Display settings** (gear) | Field of view, how visible the gun stays while aiming, tracers, range markers, shot numbers in the pattern, heatmap colours and volume. Use your browser's zoom (Ctrl + / Ctrl −) to make the whole interface bigger or smaller. |
+| **Display settings** (gear) | Field of view (60–120°, default 80°), how visible the gun stays while aiming, tracers, range markers, shot numbers in the pattern, heatmap colours, translucent panels and volume. Use your browser's zoom (Ctrl + / Ctrl −) to make the whole interface bigger or smaller. |
 
 Clicking the range always takes keyboard focus off boxes, so the shortcuts
 reach the range. **Esc** closes whatever is open.
@@ -75,8 +106,15 @@ approximated, unless listed under *Limits*.
   prone 0.1). Camera *head* springs only shake the view and never move bullets,
   same as the game.
 * **Recovery.** When an axis has gone `delay` seconds without an impulse it
-  switches to its recovery damping and speed. The game checks this once per
-  rendered frame, so the simulator does too.
+  switches to its recovery damping and speed — each layer to the recovery
+  spring with the same number (a layer without one keeps its own) — and back
+  on the next shot. The game checks this once per rendered frame, so the
+  simulator does too. Almost every gun uses a 0.1 s delay, so on guns firing
+  slower than 600 rpm the recovery springs also act between shots.
+* **Controller input** (*Mouse & KB* or *Controller*: Setup panel, finder and
+  export). On a pure controller the game halves the camera's recoil kicks
+  (view and head camera); the gun's own kicks and the spread stay the same
+  (`FirearmObject.impulseSprings`).
 * **Frame timing.** Shots fire on frame boundaries (several per frame if the
   fire rate is higher than the frame rate). The game's clock keeps running
   while its fire loop runs inside a frame, so guns with near-instant multi-shots
@@ -130,14 +168,119 @@ Run the tests with `python -m unittest discover tests`.
   bodies, suppressors, barrels) as cylinders, lenses as tinted glass, and the
   rest as slightly rounded blocks. The exporter grabs real shapes for any
   meshes it is allowed to read.
-* Hip-fire bullets start at the camera rather than the barrel (a constant
-  offset of about one stud).
-* The gun-rotation pivot offset (under 0.05 studs) and the bullet's few-cm
-  start offset are ignored.
+* Bullets leave the gun where the game fires them from (`FirearmObject.fire`):
+  the **barrel** at the hip, the **sight part** when aimed. The recoil springs
+  turn the gun about its pivot in front of the camera, as in game, so the gun's
+  lever arm moves the fire point too. Hip-fire bullets fly parallel to the view
+  from the barrel, so they land a fixed offset from the crosshair, the same at
+  every range (the AK-47's: 0.75 studs right, 0.71 low). Recoil control pulls
+  against the recoil only, not that offset. (The fire point needs the gun
+  model; a gun without one fires from the camera.)
+* The game starts each bullet part-way through its first frame. That changes
+  its travel time by under a frame but not where it lands, so it's left out.
 * Recoil control is an idealised model: a fixed percentage of the average path.
 * Penetration and map geometry are not simulated, and targets don't move.
-* Mouse and keyboard only. The game halves camera recoil for pure controller
-  input, and that isn't applied here.
+
+### Recoil designer
+
+*Recoil → Design…* builds recoil the game can run from what you lay out: where
+every shot of the magazine lands, how widely it spreads, how the camera snaps
+back, how the gun kicks and the view shakes. Whatever the recoil being designed
+does is always on screen — every shot's landing point (orange), its spread
+ring, red lines to your targets, and the **Motion** chart under the canvas
+(camera, gun and view-shake angles over time, with when the view is back at the
+centre after the last shot).
+
+The design starts from the gun's recoil as it is now; **Start from** (Pattern
+tab) picks its game values or any other gun's recoil instead — every part.
+
+**Pattern tab** — the canvas tools (keys L / P / M):
+
+* **Draw line** — click points along the path; the first *Line covers* shots
+  are spread evenly along it. It always starts at shot 1 (which fires before
+  any recoil, so it lands where you aim).
+* **Place shots** — each click puts the next shot exactly there (clicking a
+  shot you already placed selects it instead).
+* **Move shots** — click any shot (its marker or its orange landing dot) to
+  select it — the Pattern tab opens on its panel — and drag it; arrows nudge it
+  (Shift: more), `[` / `]` step through the shots, Delete frees it. Drag the small squares on
+  the selected shot's ring (or Shift+wheel) to size its spread.
+
+A thin line joins the shots in order in every tool. *After the line*: Free,
+Settle around the last point, or Keep going (soft targets). *Copy pattern* puts
+every shot of the current recoil — and its spread — on the canvas to edit.
+*Undo / Redo* (Ctrl+Z / Ctrl+Y), *Clear*, *Mirror* and *Smooth* work on the
+pattern; the *Rings* switch shows or hides the spread rings, *Spread* draws 150
+simulated magazines (randomness included); wheel zooms, right / middle drag
+pans. The Motion chart's chips switch its lines on and off.
+
+The **selected shot** panel: when it fires, how much it **counts** (Free /
+Soft / Normal / Strong / Lock), its **spread ring** (± left/right and ±
+up/down in studs: about 19 magazines in 20 land inside) and where it really
+lands and spreads. Rings set on some shots carry over smoothly to the shots
+between them; *Spread rings* sets one size for all, or one that grows through
+the magazine.
+
+**Make recoil** — the big button at the bottom of the side panel, on every tab
+(or Ctrl+Enter) — builds the final recoil: it fits the camera's pitch / yaw
+layers to the pattern and spread rings, with the Camera settings and the Gun &
+view parts, in a second or two. It pulses while the result is out of date
+(nothing made yet, or something changed since).
+
+**Camera tab** — how Make recoil builds the camera:
+
+* **Feel**: *Game-like* (like the game's guns: fast springs may bounce a little,
+  slow ones never do — no floaty swinging), *Smooth* (nothing bounces) or
+  *Free* (anything, for zig-zags).
+* **Layers**: Auto or 1–16 per direction.
+* **Snap back**: how soon after the last shot the view should be back at the
+  centre. Every layer gets its own **recovery spring** (the game pairs them by
+  layer and switches to them when no shot has come for the *delay*); the
+  recovery damping / speed set where new layers start, and the fit tunes them.
+* **Punch** (a sharp kick on each shot that's gone before the next — felt, not
+  seen in the pattern) and **Side shake** (random left / right per shot) are
+  layers kept as they are, which the fit works around.
+* **Randomness**: each kick's variance as a share of the kick, used when no
+  spread rings are set. With rings, each layer's variance is solved so every
+  shot spreads as asked (adding randomness-only layers where needed).
+
+The **Camera layers** table lists every layer — damping, speed, kick,
+variance, recovery damping and speed — editable, with the picture updating
+live. **Lock** a layer to keep it through the next Make recoil; *Re-fit kicks*
+keeps the springs and solves only the kicks; *Gun's camera layers* puts the
+gun's own back (locked) to build on.
+
+**Gun & view tab** — the other parts for the stance being designed:
+**Rotational** (turns the gun; bullets follow it), **Translational** (moves the
+gun, mostly the kick back), **Head Camera** (view shake only) and **Camera
+roll**. Each axis has its layers with recovery springs and its delay;
+presets (None / Light / Medium / Heavy / Snappy / Bouncy), *This gun's own*,
+or copy the part from any gun. Changes show live; Make recoil again to land the
+pattern with them.
+
+**Use it on this gun** puts the design (camera, gun kick, view shake and all
+their recovery) into the Recoil tab for that stance. **Test fire** fires a
+magazine on the range with it first, in the stance being designed (*Use it*,
+*Fire again* or *Back to designer*; the range's stance always comes back, and
+the gun's recoil too unless you pick *Use it*). The design stays while you switch tabs or close
+the designer; opening it for another gun starts a new one.
+
+What the game can do: every layer is a spring that gets the same random kick
+(mean ± variance) on every shot, and switches to its recovery spring once no
+shot has come for the delay — there's no per-shot recoil table. Shots behave
+differently only because the springs are at different points when each kick
+lands, so per-shot control is over where each shot should land and how widely
+it spreads; the fit finds springs, kicks, variances and recovery that do it.
+Recreating a real gun works: the G11K2's pattern and per-shot spread, rebuilt
+from scratch, land within a few hundredths of a stud.
+
+How: every camera layer moves the shots by a fixed amount times where its
+spring is at each shot, which the designer computes exactly (spring maths with
+the game's recovery switch, checked against the simulator). It searches the
+feel's springs and recovery springs (keeping the best few combinations at each
+size, then fine-tuning), solves the kicks with the full simulator (a few
+correction steps for big kicks), and solves the variances from the per-shot
+spread. The gun's other parts are accounted for.
 
 ## Best setup finder
 
@@ -150,37 +293,66 @@ The finder has everything that affects the search in one place:
   in its header to search another gun without leaving the finder. **Equip**
   puts the chosen setup (and that gun) on the range.
 * **Scenario**: range, aim point, stance, sight, fire mode, recoil control,
-  enemy health, game FPS and bullet drop (off = you aim for drop, so it never
-  counts as recoil). It's copied from the Setup panel when the finder opens
-  (*Copy from range* copies it again) and changing it never changes the range.
-  Sight (default aimed) and recoil control (default 100 %) are the finder's
-  own and are remembered.
+  input (mouse & keyboard / controller), shots per mag (empty = the bare gun's
+  magazine), click rate (semi / burst), enemy health, game FPS and bullet drop
+  (off = you aim for drop, so it never counts as recoil) — the same settings
+  the range has. It's copied from the Setup panel the first time the finder
+  opens and after that keeps what you set (*Copy from range* copies it again);
+  changing it never changes the range. Sight (default aimed) and recoil control
+  (default 100 %) are the finder's own. All of it is remembered.
 * **Slots to search**: each slot card shows what it searches and has two
   buttons. **Exclude** opens a chip list of that slot's attachments: red ones
   are left out (click to toggle, filter, include / exclude all). **Lock** opens
   the same kind of list: click one attachment (or *Empty slot*) to fix the slot
   to it, so you can search around e.g. a conversion kit without equipping it;
   the equipped one is marked. Exclusions are remembered per gun.
-* **Joke attachments start out excluded**: DCL 120, Halbek Device, Oil Filter,
-  Muffler, Ballistics Tracker, the canted ACOG / Animu / Furro sights,
-  Suppressor..?, the .17 Incinerator (M107 and the other .50 snipers),
+* **Joke attachments start out excluded**: Halbek Device, Oil Filter and
+  Muffler (the versions on 235+ guns; the alternative versions on 24 / 27 guns
+  are searched), Chainsaw Grip, Ballistics Tracker, the canted ACOG / Animu /
+  Furro sights, the .17 Incinerator (M107 and the other .50 snipers),
   .223 Remington ammo and the
-  KS-23M harpoon, plus the Heavy Buffer on the M231 only, and every
+  KS-23M harpoon, plus the Heavy Buffer on the M231 only (it drops the M231
+  from 1 225 to 200 rpm; on the Colt SMG 635 it's a normal 1 000 → 800 rpm
+  attachment, so it stays in), and every
   admin / super-tester-only attachment on normal guns (e.g. the M107 and M249
   bipods, the G36 family's Hensoldt Dual Optic; test guns keep theirs). Click a red chip to
   put one back. **Reset all** clears every exclusion and lock so everything is
   searched; pressed again (it then reads *Restore default exclusions*), it
   brings the default list back.
   **Edit default list** (next to *Reset all*, in the finder and the export)
-  opens the whole list for every slot: click to add or remove, *Restore
-  built-in list* undoes your changes. Your list is kept on this computer and is
+  opens the whole list for every slot, one chip per attachment: **click** to
+  exclude it on every gun (red) or put it back; **right-click** for a list of
+  the guns that can use it, to exclude it on some guns only (the chip turns
+  orange and says which guns; ticking every gun that has it is the same as
+  excluding it everywhere, so an attachment only one gun has just turns red).
+  The export's own exclusions work the same way.
+  *Restore built-in list* undoes your changes. Your list is kept on this computer and is
   used by every gun whose own exclusions you haven't changed, and by the export.
 * **Search**: *Thorough* (default, described below), *Standard* or *Quick*, and
   how many setups to list: a preset, *All* (every distinct setup the search
   finds; slower) or *Custom…* for your own number.
+* **Tie-breakers** decide between setups that are equal on the goal (for the
+  First STK goals: the same range). *Default* is the built-in order: First STK
+  goals go handling then less recoil for one-shots and less recoil then
+  handling when it takes more than one shot; other goals go to more damage per
+  mag. *Custom* is your own: picking it opens a small drop-down list (the panel
+  around it doesn't change); tick any of **less recoil** (distance from aim),
+  **better handling**, **more damage / mag**, **less climb**, **less spread**
+  and move them up or down. The order always shows on a line under *Default |
+  Custom* — *Default* shows the built-in order for the chosen goal, *Custom*
+  yours (click it to change the list). A line too long for the box ends in
+  "…"; hover it for the whole list. Fewer attachments always comes last, and with a
+  custom order an attachment only stays in a setup if it helps the goal or one
+  of the ticked tie-breakers — e.g. *Closest to aim point* with *better
+  handling* ticked adds a sprint laser or a faster optic on top of the most
+  accurate setup. The same order is used by the every-gun export. Whenever
+  handling breaks ties, attachments that only change handling (a red laser's
+  sprint speed, a blue laser's aim speed) are searched as their own options.
+  Recoil differences count down to 0.0001 studs, as in the accuracy goal.
 * **Copy from range** copies range, aim point, stance, sight, fire mode,
-  recoil control, health and FPS from the Setup panel (the export's scenario
-  has the same button).
+  recoil control, input, shots per mag, click rate, health and FPS from the
+  Setup panel (the export's scenario has the same button, which copies all of
+  those but shots per mag).
 
 Results come in three lists: *Lowest spread* (shown first), *Lowest climb* and
 *Best overall* (your goal; shown first for the first STK goals). **Equip** puts a setup on the gun. *Every attachment on
@@ -205,7 +377,8 @@ score, climb and spread compared with an empty slot. **B** opens the finder.
    conversion kit, or a muzzle that's poor on its own but great with one grip).
 4. The top setups are re-run with many more mag dumps for the final ranking.
    Setups that only add attachments without improving the score are moved
-   down, and ties are broken by damage per mag, then by fewer attachments.
+   down, and ties are broken by the tie-breakers (by default damage per mag),
+   then by fewer attachments.
    At least five setups are always listed.
 
 **Goal descriptions:** hover a goal in the goal list (finder or export) to see what it ranks by; hovering the closed list shows the chosen one.
@@ -369,7 +542,7 @@ What you can export:
 
 | Table | Options |
 |---|---|
-| **Best setups · your guns** | A toggle list of guns (all by default; click a class to toggle all of it, *Pick guns* to choose single guns, or search), goal (the finder's goals plus **First STK range (auto: limb or torso)**: every gun ranked by First STK range on the limbs if it's a single-bullet gun whose limbs take more damage, else the torso; the goal column names the part, e.g. *2-shot: 50.5 (limb)*), which lists (lowest spread / lowest climb / best overall; only *best overall* by default, and fewer lists search faster), slot cards with the same **Exclude** / **Lock** buttons as the finder (a lock applies to every gun that can use that attachment; exclusions start from the same default joke list, with gun-specific entries such as the M231's Heavy Buffer; *Reset all* works the same way), setups per gun (a preset, *All* or your own number), search depth (*Thorough* by default), and the scenario (including game FPS and bullet drop) (range, aim point, stance, sight, fire-mode preference, recoil control, enemy health). Runs the finder on each gun in the background; the preview fills in as guns finish, it shows the time left, *Stop* keeps what's done, and everything done so far can be exported at any time. Columns: class, unlock rank, gun, list (only when you export several lists), # (only with several setups per gun), the five slots, spread, climb, the goal value, **First STK range (limb / torso / head)** (one column each, the finder's First STK logic: the fewest shots to kill that part and the range it holds over, e.g. *2-shot: 87.9*), **handling vs the bare gun** (every gun), the **average one-shot range** aiming at the limbs / torso / head (only for setups that fire pellets — shotguns or a buckshot conversion), average distance from the aim point, TTK, **On target (n st)** (n = the scenario range), headshot rate, kills per mag, and the fire mode actually used. Anything a row doesn't have reads **N/A** (an empty attachment slot stays blank). |
+| **Best setups · your guns** | A toggle list of guns (all by default; click a class to toggle all of it, *Pick guns* to choose single guns, or search), goal (the finder's goals plus **First STK range (auto: limb or torso)**: every gun ranked by First STK range on the limbs if it's a single-bullet gun whose limbs take more damage, else the torso; the goal column names the part, e.g. *2-shot: 50.5 (limb)*), which lists (lowest spread / lowest climb / best overall; only *best overall* by default, and fewer lists search faster), slot cards with the same **Exclude** / **Lock** buttons as the finder (a lock applies to every gun that can use that attachment; exclusions start from the same default joke list, with gun-specific entries such as the M231's Heavy Buffer; *Reset all* works the same way), setups per gun (a preset, *All* or your own number), search depth (*Thorough* by default), tie-breakers (shared with the finder), and the scenario (including game FPS, input and bullet drop) (range, aim point, stance, sight, fire-mode preference, recoil control, enemy health). Runs the finder on each gun in the background; the preview fills in as guns finish, it shows the time left, *Stop* keeps what's done, and everything done so far can be exported at any time. Columns: class, unlock rank, gun, list (only when you export several lists), # (only with several setups per gun), the five slots, spread, climb, the goal value, **First STK range (limb / torso / head)** (one column each, the finder's First STK logic: the fewest shots to kill that part and the range it holds over, e.g. *2-shot: 87.9*), **handling vs the bare gun** (every gun), the **average one-shot range** aiming at the limbs / torso / head (only for setups that fire pellets — shotguns or a buckshot conversion), average distance from the aim point, TTK, **On target (n st)** (n = the scenario range), headshot rate, kills per mag, and the fire mode actually used. Anything a row doesn't have reads **N/A** (an empty attachment slot stays blank). |
 | **Best setups · one gun** | The latest finder results for the range's gun (or, if it has none, the last gun you searched): which lists (best overall by default), how many setups, and an optional second sheet (Excel) with every attachment's effect on its own. |
 | **Gun stats · every gun** | Classes, your own list of ranges, enemy health, and column groups: basics, fire rates, damage & multipliers, damage at each range, shots to kill (head / torso / limb) at each range, bullet speed & penetration, handling. Instant. Optionally adds **simulated accuracy** for every gun (hit rate, headshots, distance from aim, climb, spread, TTK, kills and damage per mag) for a scenario (including FPS and bullet drop) and number of mags you choose. |
 | **Damage by range** | For the current setup, either the **shots-to-kill breakpoints** (default: one row per body part and range band where shots to kill stays the same, with the damage at each end; the last band's *To* reads *inf*) or damage and shots to kill every *n* studs, up to a range you choose. |
@@ -403,7 +576,9 @@ RecoilSim/
   recoilsim/
     lua.py                 Lua-table helpers (1-based arrays, mixed tables)
     modifiers.py           port of the attachment stat-modifier pipeline
-    gamedata.py            loads data, compiles gun + attachments
+    gamedata.py            loads data, compiles gun + attachments, recoil edits
+    recoil_edit.py         editable recoil tables and the game's recoil text format
+    recoil_fit.py          the recoil designer's fitting (pattern + spread -> recoil)
     springs.py             analytic spring maths (vectorised)
     simulate.py            firing pipeline, ballistics, hitboxes, damage
     analysis.py            stats, kill times, recoil-control path, heatmaps
@@ -417,6 +592,8 @@ RecoilSim/
     core.js                shared state, helpers, storage, popovers
     range.js               the 3D range, firing replay, hold-to-fire, read-out
     panels.js              Setup and Analysis panels (pattern, results, gun stats)
+    recoil.js              the Recoil tab (view / edit / export / import recoil)
+    designer.js            the recoil designer
     finder.js              best setup finder
     export.js              export dialog
     main.js                start-up and wiring

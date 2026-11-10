@@ -393,3 +393,279 @@ Sheet exporter:
   - Now any setup that needs 2+ shots ranks range → recoil → handling.
   - One-shots keep range → handling → recoil.
   - Goal descriptions, export help text and README updated.
+
+---
+
+# 9 November 2026
+
+## Batch 22 — feedback round
+
+### Search ranking
+- **Fixed: First STK goals ignored small recoil gains.** Recoil only broke ties
+  when it differed by 0.001 studs of distance from aim. At 100 % recoil control
+  a Full Stock only takes about 0.0005 off, so it counted as a tie and the
+  handling tie-break picked a laser instead. The Type 88 chose the Yellow
+  Laser for this reason. The threshold is now 0.0001 studs, the same as the
+  accuracy goal. The Type 88 now picks Full Stock (and DCL 120 is no longer
+  dropped for the same reason).
+- **Fixed: attachments that only change handling were treated as "no
+  attachment".** The red Laser (+20 % sprint and sprint-to-aim speed) and the
+  Blue Laser (+7 % aim speed) were grouped with an empty slot and never tried.
+  Whenever handling breaks ties, they are now searched as their own options.
+  The finder's slot cards also count them as options.
+- **New: tie-breakers you can order yourself.** In the finder's Search section
+  and in *Best setups · your guns*, choose *Default* (the built-in order) or
+  *Custom*.
+  - Custom: tick any of less recoil, better handling, more damage / mag, less
+    climb and less spread, and move them up or down.
+  - Fewer attachments always comes last.
+  - With a custom order, an attachment stays in a setup only if it helps the
+    goal or a ticked tie-breaker. For example, *Closest to aim point* with
+    handling ticked adds handling-only attachments on top.
+  - The finder and the export share the setting, and it's kept across
+    restarts.
+  - Server side: `tiebreak` in the search request, `TIEBREAKS` /
+    `default_tiebreak()` in `optimizer.py`. Every evaluation now records
+    distance from aim and damage per mag.
+
+### Simulation accuracy
+- **Bullets now leave the barrel (hip) or the sight part (aimed)**, as in the
+  game's `FirearmObject.fire`, using the gun model.
+  - Recoil turns the gun about its pivot in front of the camera (`mainoffset`),
+    not about the camera.
+  - Hip-fire shots land a fixed offset from the crosshair at every range (AK-47:
+    0.75 st right, 0.71 st low). Recoil control doesn't remove that offset.
+  - Aimed shots change by well under 0.01 st.
+  - `models.fire_pose()`, `GameData.use_models()`, `WeaponConfig.pose`; search
+    workers load the models too.
+  - README limits updated. New test `test_fire_point`.
+- Fixed the `RuntimeWarning: Mean of empty slice` spam (analysis.py) when no
+  pellet of a shot reaches the target.
+
+### Interface
+- **Loading screen** on start-up. It shows what's loading and fades out once
+  the 3D range has drawn the gun (it never stays longer than 20 s). The "pick
+  up where you left off?" question comes after it.
+- **Export keeps its settings.** Closing and reopening the export no longer
+  resets the scenario to the range's values; only the first open copies them
+  (*Copy from range* does it on demand). Every export option is also part of
+  the session save, offered again on the next start.
+- **Gun classes in the game's loadout order everywhere:**
+  - primaries: assault rifle, battle rifle, carbine, shotgun, PDW, DMR, LMG,
+    sniper rifle (the Assault / Scout / Support / Recon kits in turn);
+  - then secondaries: pistols, machine pistols, revolvers, other.
+  - The gun picker and the export gun list have *Primaries* / *Secondaries*
+    headings.
+- **Exclusions reworked.** There is one chip per attachment.
+  - Click excludes it on every gun.
+  - **Right-click** opens a list of the guns that can use it, to exclude it on
+    some guns only. The chip turns orange and names the guns.
+  - "Gun only" entries no longer clutter the list as separate chips.
+  - Turning an attachment on for every gun replaces its gun-only entries.
+  - This applies in the default-list editor and the export's own exclusions.
+- New test `test_custom_tiebreak_keeps_handling_attachments`. README updated
+  throughout.
+
+## Batch 23 — recoil editor, designer, controller input, audit
+
+### New
+- **Recoil tab** (next to Gun stats): the gun's own recoil per stance (aimed /
+  hip) and part.
+  - The parts are camera, gun turn, gun move and view shake. Each lists every
+    axis's spring layers (damping, speed, mean, variance) and the recovery
+    springs with their delay.
+  - Every number is editable; **+ layer** / **×** add or remove layers.
+  - Edited guns use their recoil everywhere (range, pattern, finder, export —
+    search workers included). Attachments still apply on top.
+  - **Export**: the game's own recoil text format, taken from the game's weapon
+    editor (`PageWeaponEditorRecoilExport`). Copy it or save it as .lua.
+  - **Import** reads that format back. **Reset** returns to the game's values.
+  - Edits are part of the session save.
+  - Code: `recoil_edit.py`, `GameData.set_recoil_overrides()` /
+    `base_recoil()`, `/api/recoil*`.
+- **Recoil designer** (*Recoil → Design…*).
+  - A zoomable dummy at a chosen range. Click the shots in order, as a line
+    (shots spread evenly along it) or one point per shot. Drag to move a
+    point, right-click to delete it.
+  - Helpers: start from the gun's pattern, mirror, smooth.
+  - Settings: detail (1–3 spring layers) and randomness. Works for aimed and
+    hip fire.
+  - *Make recoil* fits the camera springs: a least-squares fit of the kicks
+    inside a multi-start search over damping and speed, through the real
+    simulator. It shows the new average pattern and the average miss.
+  - *Use it on this gun* writes the fit into the Recoil tab.
+  - Code: `recoil_fit.py`, `/api/recoil/fit` and `/api/recoil/path`.
+- **Input: mouse & keyboard / controller** on the range, in the finder and in
+  the export.
+  - On a pure controller the game halves the camera kicks
+    (`FirearmObject.impulseSprings`); that is now simulated
+    (`SimSettings.controller`).
+- **Settings parity.** The finder and the export got the range's remaining
+  settings: input, shots per mag (export: best setups) and click rate.
+
+### Changed
+- **Tie-breakers.** *Custom* now opens a compact drop-down list instead of
+  growing the panel. The chosen order shows as one line next to it.
+- **Exclusions.** Ticking every gun an attachment is on (for example the only
+  gun it's on) now counts as excluding it everywhere, so the chip just turns
+  red.
+- **Default exclusions.**
+  - Taken off: DCL 120, the Muffler and Oil Filter variants on 27 / 24 guns,
+    and Suppressor..?.
+  - Added: Chainsaw Grip.
+  - Edited lists follow automatically.
+- **Everything survives a relaunch.** "Load previous session" brings back:
+  - the finder's results (last 6 guns searched), its scenario and its other
+    settings;
+  - finished or stopped every-gun export tables and an imported sheet (kept
+    separately, as they can be large);
+  - edited recoil;
+  - the simulation that was on screen (it is run again).
+  The finder's scenario now also keeps your values instead of re-copying the
+  range's every time it opens (*Copy from range* still does that).
+
+### Audit fixes
+- The tie-breaker *Custom* button didn't open its list (the click handler
+  read the button after re-rendering it).
+- The recoil designer's search could be poisoned by spring settings that fling
+  shots off the target (NaN paths). It now measures each layer with a small
+  kick and skips invalid settings.
+- Small layout fixes (finder labels, the export click-rate box).
+- Tests added: recoil text round trip and override, designer fit, controller
+  halving, the new default list. 40 tests, all passing.
+
+## Batch 24
+
+- **Fixed: the start-up screen showed as a giant logo instead of fading.** A
+  stylesheet edit in Batch 23 had dropped its styles. They're back, and the
+  overlay now also carries its essential layout inline, so it can't show
+  unstyled again.
+- **Recoil tab:**
+  - New **Blank** button next to Reset. It sets every recoil value to 0
+    (aimed and hip, every part, recovery included) and leaves one layer per
+    axis, to build recoil from scratch. Reset brings the game's values back.
+  - Renamed: Gun turn → **Rotational**, Gun move → **Translational**, View
+    shake → **Head Camera**.
+
+## Batch 25 — recoil designer rebuilt
+
+- **Every shot is editable.** The pattern is now the whole magazine, one
+  numbered dot per shot. *Move shots*: click any shot, drag it, nudge it with
+  the arrow keys, type its exact x / y, step through shots with `[` / `]`.
+- **Per-shot weight**: Free / Soft / Normal / Strong / Lock decides how tightly
+  the fit has to hit each shot.
+- **Three tools**: *Draw line* (shots spread along it), *Place shots* (one
+  click per shot), *Move shots*. The line now always starts at shot 1, which
+  fires before any recoil.
+- **Shots after the line**: *Line covers* sets how many shots the line spans;
+  the rest are *Free*, *Settle* around the last point, or *Keep going* in the
+  line's direction — and each can still be moved by hand, so the end of the
+  magazine is fully designable.
+- **More layers**: Auto, or 1–16 per direction (was 1–3). Fits are much closer:
+  in testing a zig-zag pattern fits to ~0.06 st average miss.
+- **Editable result**: the fitted layers (damping, speed, kick, variance) are
+  listed and editable, layers can be added or removed, and every shot's landing
+  point redraws live. *Re-fit kicks* keeps your springs and solves the kicks.
+- After a fit the canvas shows where every shot of the magazine lands, red
+  miss lines, the average miss and the furthest-off shot (click to select it).
+- *Spread* shows 150 simulated magazines with randomness; *Randomness* updates
+  a finished fit straight away.
+- *Undo / Redo* (Ctrl+Z / Ctrl+Y) for every pattern edit; keys L / P / M pick
+  the tool.
+- Server: new fitting engine (`recoil_fit.py`), `/api/recoil/path` (a recoil's
+  path for any number of shots, optional spread), recoil layers allowed per
+  axis raised to 16.
+- Note: the game has no per-shot recoil, recovery or damping — every shot gets
+  the same kick on each layer. Per-shot control is over where each shot should
+  land; the layers are what you tune.
+- Tests: designer fit with free shots and fixed-spring refit. 40 tests passing.
+
+## Batch 26
+
+- **Field of view** (Settings) now goes from 60° to 120°, default 80°. Saved
+  settings that still had the old default move to 80; a value you set
+  yourself is kept (clamped to the new range).
+- **Fixed: "invalid literal for int() with base 10: 'auto'"** in the recoil
+  designer. This came from RecoilSim still running the code from before the
+  Batch 25 update (the page was new, the server was not). Restarting fixes it.
+  To stop this catching you out again, the page now checks whether the server
+  is older than its files and, if so, shows a banner asking you to restart.
+
+## Batch 27 — recoil designer, round two
+
+- **Fixed: designed recoil felt floaty and didn't snap back.** The game pairs
+  every recoil layer with a recovery spring *by layer number*, and switches to
+  it once no shot has come for the delay (0.1 s on almost every gun — so with
+  most automatics it happens between shots, too). The old designer kept the
+  gun's recovery list while replacing its layers: new layers got another
+  layer's recovery spring, or none (they never recovered), and the fit was
+  free to use slow, barely-damped springs. Now every designed layer has its own
+  recovery spring, the fit models the switch exactly, and the *Game-like* feel
+  only uses springs like the game's own guns (slow springs never bounce).
+- **Snap back** (Camera tab): how soon after the last shot the view is back at
+  the centre (default 0.6 s, or off), plus the recovery damping, speed and
+  delay new layers start from.
+- **Spread rings instead of exact coordinates**: each shot's ring says how
+  widely it may land around its point (± left/right, ± up/down). Set rings on
+  a few shots (or one size / a growing size for all); the ones between follow.
+  Make recoil solves every layer's variance to match, adding randomness-only
+  layers where needed. Drag the ring's handles or Shift+wheel to size it.
+- **A line through the shots in every tool** (Place and Move too).
+- **Gun & view tab**: Rotational, Translational, Head Camera and camera roll —
+  every axis's layers with recovery springs and delay, presets, *This gun's
+  own*, or copy a part from any gun. Live preview.
+- **Start from any gun's recoil**; *Copy pattern* now also copies the spread.
+- **Camera tab**: feel (Game-like / Smooth / Free), layers, snap back,
+  **Punch** and **Side shake** per shot, randomness. Layers table with
+  recovery columns, **lock** (kept through Make recoil), *Re-fit kicks*,
+  *Gun's camera layers*.
+- **Motion chart**: camera, gun and view-shake angles over time, with when
+  the view is back at the centre.
+- **Test fire**: fire a magazine on the range with the design, then use it,
+  fire again or go back.
+- **Faster and closer fits** (a second or two): the search runs on exact
+  spring maths, keeps the best few combinations at each size, tunes recovery
+  springs too, and corrects the kicks with the simulator. The G11K2's own
+  pattern and spread, rebuilt from scratch: about 0.01–0.07 st average miss at
+  50 st; with its own springs the kicks come out exactly (1.5, 0.35).
+- **Tie-breakers**: *Default* now shows the built-in order for the chosen
+  goal on the line under the buttons, like *Custom*. Long lines end in "…";
+  hover shows the whole list.
+- **Start fresh** now resets the tie-breakers, the default exclusion list and
+  full-screen choices too (the Settings panel stays). A session that only
+  changed recoil, export options or those also gets the question now, instead
+  of being dropped silently.
+- Tests: designed layers carry their own recovery and snap back; the G11K2
+  rebuilt from scratch and from its own springs. 41 tests passing.
+
+## Batch 28 — README check
+
+README brought up to date with the code:
+- Recovery explained as the game does it: each layer switches to the recovery
+  spring with the same number after the delay, and on guns slower than
+  600 rpm that also happens between shots (simulation section and Recoil tab).
+- Controller input moved from *Limits* to *How the simulation works* (it's
+  modelled, not a limit).
+- Display settings: field of view 60–120° (default 80°), translucent panels.
+- Starting up: `--data` option; restart after copying in a new version (and
+  the banner that says so).
+- Recoil designer: toolbar switches (Rings, Spread), Motion chart chips, what
+  Test fire restores, the design staying until you open it for another gun.
+- Export: tie-breakers and input in the every-gun options; *Copy from range*
+  lists everything it copies (input, shots per mag, click rate).
+- Folder layout: `recoil_edit.py`, `recoil_fit.py`, `recoil.js`, `designer.js`.
+
+## Batch 29
+
+- **Make recoil moved out of the Camera tab.** It's now the big button at the
+  bottom of the designer's side panel, visible on every tab, with the result
+  (average miss, furthest-off shot) under it. It pulses while the result is
+  out of date and says so ("Something changed — make it again"); Ctrl+Enter
+  works too. *Use it on this gun (aimed / hip fire)* and *Test fire* sit under it.
+- **Fixed: clicking a shot didn't show its settings.** The shot panel lives on
+  the Pattern tab, so with the Camera or Gun & view tab open a click selected
+  the shot without showing anything; and clicking a shot's orange landing dot
+  (rather than its target marker) selected nothing. Now a click on either
+  selects the shot, switches to the Pattern tab and scrolls its panel into view
+  (it flashes briefly). In *Place shots*, clicking a shot you already placed
+  selects it instead of placing another one on top.

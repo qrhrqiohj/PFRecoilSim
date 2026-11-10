@@ -17,12 +17,15 @@ function settings() {
     gravity: $("gravity").checked,
     fps: clampFps($("fps").value),
     health: +$("health").value || 100,
+    controller: !!state.controller,
+    ...(Object.keys(state.recoilEdits || {}).length ? { recoil_overrides: state.recoilEdits } : {}),
   };
 }
 function applySavedSettings(s) {
   if (s.distance) { $("distanceNum").value = s.distance; setRange("distance", Math.min(600, s.distance)); }
   state.aiming = s.aiming !== false; setAimSeg(state.aiming ? "aim" : "hip"); state.aimBlend = state.aiming ? 1 : 0;
   state.stance = s.stance || "stand"; setStanceSeg(state.stance);
+  state.controller = !!s.controller; setInputSeg(state.controller ? "pad" : "kbm");
   $("shots").value = s.shots || "";
   $("triggerRpm").value = s.trigger_rpm || "";
   setRange("comp", s.compensation || 0); $("compVal").textContent = `${$("comp").value}%`;
@@ -54,18 +57,25 @@ function openWeaponPicker(anchor = $("weaponChip"), target = null) {
 }
 function renderWeaponCats() {
   const classes = Object.keys(state.catalog.classes);
+  // primaries, then secondaries (a thin divider between them), as in the game's loadout
+  let last = null;
   $("weaponCats").innerHTML = [["", "All"], ...classes.map((c) => [c, titleCase(c)])]
-    .map(([k, l]) => `<button data-c="${esc(k)}" class="${k === pickerClass ? "on" : ""}">${esc(l)}</button>`).join("");
+    .map(([k, l]) => {
+      const sl = k ? slotOfClass(k) : null, gap = sl && last && sl !== last ? `<span class="cat-gap" title="${sl}"></span>` : "";
+      if (sl) last = sl;
+      return `${gap}<button data-c="${esc(k)}" class="${k === pickerClass ? "on" : ""}" title="${sl ? `${sl.slice(0, -1)}` : "Every class"}">${esc(l)}</button>`;
+    }).join("");
 }
 function renderWeaponList() {
   const f = norm($("weaponSearch").value);
   const groups = [];
-  let n = 0;
+  let n = 0, lastSlot = null;
   for (const [cls, list] of Object.entries(state.catalog.classes)) {
     if (pickerClass && cls !== pickerClass) continue;
     const items = list.filter((w) => !f || norm(w.displayname).includes(f) || norm(w.name).includes(f) || norm(cls).includes(f));
     if (!items.length) continue;
     n += items.length;
+    if (!pickerClass && slotOfClass(cls) !== lastSlot) { lastSlot = slotOfClass(cls); groups.push(`<div class="pk-slot">${lastSlot}</div>`); }
     groups.push(`<div class="pk-group">${esc(titleCase(cls))}</div>` + items.map((w) =>
       `<button class="pk-item ${w.name === pickerTarget.current() ? "cur" : ""}" data-v="${esc(w.name)}"><span class="t"><span class="n">${esc(w.displayname)}</span></span><span class="m">${rankLabel(w.rank, w.test)}</span>${icon("check")}</button>`).join(""));
   }
@@ -92,7 +102,7 @@ async function selectWeapon(name, atts) {
   $("weaponName").textContent = info.displayname;
   $("weaponClass").textContent = titleCase(info.class || "");
   $("weaponChip").title = info.description ? `${info.description}\n\nChange gun (G)` : "Change gun (G)";
-  renderAbout();
+  renderAbout(); renderRecoilTab();
   const fm = $("firemode");
   fm.innerHTML = "";
   info.firemodes.forEach((l, i) => fm.add(new Option(l, i)));
@@ -248,7 +258,7 @@ async function refreshStats() {
       items.push([p === "head" ? `${l} <span class="tip" data-tip="${esc(tip)}">?</span>` : l, os[p] == null ? "–" : `${esc(os[p].text)}${/\d\+?$/.test(os[p].text) ? "<small> st</small>" : ""}`, p]);
     }
   }
-  renderAbout();
+  renderAbout(); renderRecoilTab();
   $("statsCard").innerHTML = items.map(([k, v, c]) => `<div class="r ${c || ""}"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("");
   drawDamageGraph();
 }
@@ -446,6 +456,8 @@ async function runDumps() {
     const res = await api("/api/simulate", { weapon: state.weapon, attachments: state.attachments, settings: settings(), runs: n, return_runs: 1, heatmap: true, dump: true }, dumpAbort.signal, 180000);
     state.lastDump = res;
     state.lastDump.label = currentLabel();
+    // the next session's "Load previous session" re-runs it (results are too big to keep)
+    state.saved.dump = n; store();
     state.dotsCleared = false;
     $("dumpStatus").innerHTML = `<b>${res.runs.toLocaleString()}</b> mags · <b>${res.summary.bullets.toLocaleString()}</b> bullets at ${res.distance} st · ${res.elapsed}s` +
       (res.capped_from ? ` · capped from ${res.capped_from.toLocaleString()} (3 million bullet limit)` : "");
@@ -458,6 +470,7 @@ async function runDumps() {
 function clearDumps() {
   if (dumpAbort) dumpAbort.abort();
   state.lastDump = null;
+  if (state.saved.dump) { delete state.saved.dump; store(); }
   renderResults(null);
   $("dumpStatus").textContent = "Results cleared.";
   drawPerShot(); drawPattern(); renderCompare();

@@ -306,6 +306,54 @@ def _weld_attachment(lib, parts, nodes, ctx):
 # ----------------------------------------------------------------- poses
 
 
+def _aim_pose(stats, parts, main):
+    """FirearmStats aim offset: (mainoffset, the aimed v175 offset or None, sight part)."""
+    mainoffset = _cf_value(stats.get("mainoffset"))
+    if mainoffset is None:
+        mainoffset = cf_translate(0.75, -1, -1.2)
+    sight_name = stats.get("sight") or "SightMark"
+    sight = _find(parts, sight_name) or _find(parts, "SightMark")
+    v10 = None
+    if sight is not None:
+        v7 = cf_inv(mainoffset) @ cf_inv(sight["M"]) @ main["M"]
+        v10 = v7.copy()
+        if stats.get("aimzdist") is not None:
+            v10[:3, 3] -= np.array([0, 0, float(stats["aimzdist"]) + float(stats.get("aimzoffset") or 0)])
+        else:
+            v10[:3, 3] -= np.array([0, 0, v7[2, 3]])
+        rel = _cf_value(stats.get("aimreloffset"))
+        if rel is not None:
+            v10 = v10 @ rel
+    return mainoffset, v10, sight
+
+
+def fire_pose(gd: GameData, lib: ModelLibrary, weapon, attachments, stats):
+    """Where bullets leave the gun, for the simulator (FirearmObject.fire):
+    the bullet frame is camera * mainoffset * CFrame.new(pose.p) * [spread *
+    translation springs * rotation springs] * pose rotation * part offset, the
+    part being the barrel at the hip and the sight part when aimed. Returns per
+    stance {"P": pivot (camera space), "Ra": mainoffset rotation, "w": part
+    position from the pivot, "Rf": part rotation} or None without a model."""
+    built = construct_weapon(gd, lib, weapon, attachments, stats)
+    if not built:
+        return None
+    parts, main = built
+    main_inv = cf_inv(main["M"])
+    mainoffset, v10, sight = _aim_pose(stats, parts, main)
+    barrel = _find(parts, stats.get("barrel") or "Flame")
+
+    def pose(v175, part):
+        if part is None:
+            return None
+        off = main_inv @ part["M"]
+        rot175 = v175.copy()
+        rot175[:3, 3] = 0
+        f = rot175 @ off
+        return {"P": (mainoffset @ cf_translate(*v175[:3, 3]))[:3, 3].tolist(), "Ra": mainoffset[:3, :3].tolist(),
+                "w": f[:3, 3].tolist(), "Rf": f[:3, :3].tolist()}
+    return {"hip": pose(np.eye(4), barrel), "aim": pose(v10, sight) if v10 is not None else None}
+
+
 def weapon_scene(gd: GameData, lib: ModelLibrary, weapon, attachments):
     """Parts in main-part space + hip/aim placements relative to the camera."""
     cfg = gd.compile(weapon, attachments)
@@ -323,24 +371,8 @@ def weapon_scene(gd: GameData, lib: ModelLibrary, weapon, attachments):
         rec["cf"] = cf_to(main_inv @ p["M"])
         out_parts.append(rec)
 
-    mainoffset = _cf_value(stats.get("mainoffset"))
-    if mainoffset is None:
-        mainoffset = cf_translate(0.75, -1, -1.2)
-    # FirearmStats aim offset
-    sight_name = stats.get("sight") or "SightMark"
-    sight = _find(parts, sight_name) or _find(parts, "SightMark")
-    aim = None
-    if sight is not None:
-        v7 = cf_inv(mainoffset) @ cf_inv(sight["M"]) @ main["M"]
-        v10 = v7.copy()
-        if stats.get("aimzdist") is not None:
-            v10[:3, 3] -= np.array([0, 0, float(stats["aimzdist"]) + float(stats.get("aimzoffset") or 0)])
-        else:
-            v10[:3, 3] -= np.array([0, 0, v7[2, 3]])
-        rel = _cf_value(stats.get("aimreloffset"))
-        if rel is not None:
-            v10 = v10 @ rel
-        aim = mainoffset @ v10
+    mainoffset, v10, sight = _aim_pose(stats, parts, main)
+    aim = mainoffset @ v10 if v10 is not None else None
     hip = mainoffset.copy()
     barrel = _find(parts, stats.get("barrel") or "Flame")
     muzzle = (main_inv @ barrel["M"])[:3, 3].tolist() if barrel is not None else [0, 0.2, -3]

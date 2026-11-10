@@ -25,13 +25,17 @@ const state = {
   aimBlend: 1, scene: null, orbit: { yaw: 0.75, pitch: 0.2, dist: 6.5 },
   snapshots: [], saved: {}, excludes: {},
   optResults: {}, // last best-setup result per gun (for export)
+  recoilEdits: {}, // gun -> edited recoil (Recoil tab), used by every simulation
 };
 
 /* ------------------------------------------------------------------ preferences (always kept) */
-const PREF_DEFAULTS = { fov: 70, ghost: 20, tracers: true, markers: true, numbers: true, heat: "thermal", vol: 70, glass: true, defExcl: null, defExclSeen: null };
+const PREF_DEFAULTS = { fov: 80, fovSet: false, ghost: 20, tracers: true, markers: true, numbers: true, heat: "thermal", vol: 70, glass: true, defExcl: null, defExclSeen: null };
 let prefs = { ...PREF_DEFAULTS };
 function loadPrefs() {
   try { prefs = { ...PREF_DEFAULTS, ...(JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") || {}) }; } catch (e) { prefs = { ...PREF_DEFAULTS }; }
+  // field of view: 60–120°, 80 unless you've set it yourself (older saves kept the old default)
+  if (!prefs.fovSet) prefs.fov = PREF_DEFAULTS.fov;
+  prefs.fov = Math.max(60, Math.min(120, +prefs.fov || PREF_DEFAULTS.fov));
 }
 /* default exclusion list: attachment names (any gun) and "GUN::name" (that gun
    only). The user's own list when they've edited it, else the built-in one. */
@@ -106,6 +110,29 @@ function mergeNewDefaultExcludes() {
   prefs.defExclSeen = now;
   savePrefs();
 }
+/* results that take a while to make — Best setup results, every-gun export
+   tables, an imported sheet — are kept with the session (separately, as they
+   can be large) and come back with "Load previous session" */
+const RESULTS_KEY = "recoilsim.results.v1";
+function storeResults() {
+  if (state.awaitingLoadChoice || state.restoring) return;
+  const recent = Object.keys(state.optResults || {}).slice(-6);
+  const jobs = {};
+  for (const [k, j] of Object.entries((typeof ex !== "undefined" && ex.jobs) || {})) {
+    if (j && j.done && j.table) jobs[k] = { done: true, error: j.error || null, rows: j.rows, elapsed: j.elapsed, guns_done: j.guns_done, guns_total: j.guns_total, progress: 1, table: j.table };
+  }
+  const data = { optResults: Object.fromEntries(recent.map((w) => [w, state.optResults[w]])), lastOptWeapon: state.lastOptWeapon || null,
+    jobs, imported: (typeof ex !== "undefined" && ex.imported) || null };
+  for (const drop of [[], ["imported"], ["imported", "jobs"]]) {
+    const d = { ...data };
+    for (const k of drop) d[k] = k === "jobs" ? {} : null;
+    try { localStorage.setItem(RESULTS_KEY, JSON.stringify(d)); return; } catch (e) { /* too big: try without the largest parts */ }
+  }
+}
+function loadResults() {
+  try { return JSON.parse(localStorage.getItem(RESULTS_KEY) || "null"); } catch (e) { return null; }
+}
+function clearResults() { try { localStorage.removeItem(RESULTS_KEY); } catch (e) { /* ignore */ } }
 function savePrefs() { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) { /* storage unavailable */ } }
 
 /* ------------------------------------------------------------------ session storage */
@@ -114,6 +141,7 @@ function store() {
   try {
     state.saved.snapshots = state.snapshots;
     state.saved.excludes = state.excludes;
+    state.saved.recoilEdits = state.recoilEdits;
     localStorage.setItem(STORE_KEY, JSON.stringify(state.saved));
   } catch (e) { /* storage unavailable or full */ }
 }
@@ -162,6 +190,9 @@ const norm = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, "");
 const icon = (name, cls = "ic") => `<svg class="${cls}"><use href="#i-${name}"/></svg>`;
 function prettyMode(l) { return l === "AUTO" ? "Auto" : l === "SEMI" ? "Semi" : l.startsWith("BURST") ? `Burst ${l.slice(6)}` : titleCase(l); }
 function aimOffset() { return state.aimPoints[$("aimPoint").value] || 0; }
+/* the game's loadout slots: classes after these are primaries' counterparts */
+const SECONDARY_CLASSES = ["PISTOLS", "MACHINE PISTOLS", "REVOLVERS", "OTHER"];
+const slotOfClass = (cls) => (SECONDARY_CLASSES.includes(cls) ? "Secondaries" : "Primaries");
 function allWeapons() { return Object.entries(state.catalog.classes).flatMap(([cls, l]) => l.map((w) => ({ ...w, cls }))); }
 function findWeapon(name) { return allWeapons().find((w) => w.name === name) || null; }
 function attLabel(slot, name) {
@@ -353,3 +384,137 @@ document.addEventListener("mouseover", (e) => {
 });
 window.addEventListener("resize", closeSelMenu);
 document.addEventListener("scroll", (e) => { if (!(e.target.closest && e.target.closest(".selmenu"))) closeSelMenu(); }, true);
+
+/* ------------------------------------------------------------------ tie-breakers
+   What decides between setups that are equal on the goal (for First STK goals:
+   equal range). "Default" keeps the built-in order; "Custom" is the user's own
+   list — tick what counts and move it up or down. Shared by the Best setup
+   finder and the every-gun export; fewer attachments always comes last. */
+const TB_DEFS = {
+  recoil: ["Less recoil", "Average distance of every bullet from the aim point, after recoil control."],
+  handling: ["Better handling", "Aim / unaim, walk (hip and aimed), sprint, sprint-to-fire and equip speed vs the bare gun."],
+  damage: ["More damage / mag", "Average damage a full magazine deals to the target."],
+  climb: ["Less climb", "How far the recoil drags the average pattern from the aim point, before recoil control."],
+  spread: ["Less spread", "Random scatter around the average pattern."],
+};
+const TB_DEFAULT_TIP = "Built-in order. First STK goals: one-shots go handling, then less recoil; setups that need more than one shot go less recoil, then handling. Other goals: more damage per mag. Then fewer attachments.";
+function tbPrefs() {
+  const t = prefs.tiebreak && typeof prefs.tiebreak === "object" ? prefs.tiebreak : {};
+  const order = (Array.isArray(t.order) ? t.order.filter((k) => TB_DEFS[k]) : []);
+  for (const k of Object.keys(TB_DEFS)) if (!order.includes(k)) order.push(k);
+  const on = { recoil: true, handling: true, ...(t.on || {}) };
+  return { custom: !!t.custom, order, on };
+}
+/* what the server gets: null = built-in order, else the ticked names in order */
+function tiebreakList() {
+  const t = tbPrefs();
+  return t.custom ? t.order.filter((k) => t.on[k]) : null;
+}
+function tiebreakText(list) {
+  return list && list.length ? list.map((k) => TB_DEFS[k][0].toLowerCase()).join(" → ") : "nothing (fewer attachments only)";
+}
+/* the built-in order for a goal (goal "stk_..." or another; "+os": one-shot guns
+   are ranked by their first STK range): [short line, full list for the hover] */
+function tiebreakDefault(goal) {
+  const g = String(goal || ""), stk = /^stk/.test(g), os = g.endsWith("+os");
+  const h = TB_DEFS.handling[0].toLowerCase(), r = TB_DEFS.recoil[0].toLowerCase(), d = TB_DEFS.damage[0].toLowerCase();
+  if (stk) return [`1-shot: ${h} → ${r} · more shots: ${r} → ${h}`,
+    `Built-in order (First STK goals):\n• Setups that kill in one shot: 1. ${TB_DEFS.handling[0]}  2. ${TB_DEFS.recoil[0]}\n• Setups that need more shots: 1. ${TB_DEFS.recoil[0]}  2. ${TB_DEFS.handling[0]}\nThen fewer attachments.`];
+  if (!g) return [`${d} (First STK goals: handling / recoil)`, TB_DEFAULT_TIP];
+  return [`${d}${os ? ` · one-shot guns: ${h} → ${r}` : ""}`,
+    `Built-in order:\n1. ${TB_DEFS.damage[0]}\nThen fewer attachments.${os ? `\n\nOne-shot guns (ranked by first STK range): 1. ${TB_DEFS.handling[0]}  2. ${TB_DEFS.recoil[0]}; if they need more than one shot: ${TB_DEFS.recoil[0]} first.` : ""}`];
+}
+function tiebreakFull(list) {
+  const t = tbPrefs();
+  return `Your order:\n${t.order.filter((k) => t.on[k]).map((k, i) => `${i + 1}. ${TB_DEFS[k][0]}`).join("\n") || "(nothing ticked)"}\nThen fewer attachments.${t.order.some((k) => !t.on[k]) ? `\n\nNot used: ${t.order.filter((k) => !t.on[k]).map((k) => TB_DEFS[k][0]).join(", ")}` : ""}\n\nClick to change it.`;
+}
+/* compact control: Default | Custom, and under it the order in one line (long
+   ones end in "..."; hover shows all of it). Custom's line opens the list as a
+   dropdown, so the panel around it never changes size */
+function tiebreakHtml(goal) {
+  const t = tbPrefs();
+  let sum;
+  if (t.custom) sum = `<button type="button" class="tb-sum" data-tb="open" title="${esc(tiebreakFull())}"><span class="tb-txt">${esc(tiebreakText(tiebreakList()))}</span><svg class="ic"><use href="#i-chev"/></svg></button>`;
+  else { const [line, full] = tiebreakDefault(goal); sum = `<span class="tb-sum tb-def" title="${esc(full)}"><span class="tb-txt">${esc(line)}</span></span>`; }
+  return `<div class="tiebox"><div class="seg mini"><button type="button" data-tb="mode" data-v="default" class="${t.custom ? "" : "on"}" title="${esc(tiebreakDefault(goal)[1])}">Default</button><button type="button" data-tb="mode" data-v="custom" class="${t.custom ? "on" : ""}" title="Pick your own order">Custom</button></div>${sum}</div>`;
+}
+function tiebreakListHtml() {
+  const t = tbPrefs();
+  return `<div class="tb-pop-head"><b>Tie-breakers</b><span class="hint">top to bottom, then fewer attachments</span></div>
+    <ol class="tb-list">${t.order.map((k, i) => `<li class="${t.on[k] ? "" : "off"}" title="${esc(TB_DEFS[k][1])}">
+      <label><input type="checkbox" data-tb="on" data-k="${k}" ${t.on[k] ? "checked" : ""}>${esc(TB_DEFS[k][0])}</label>
+      <button type="button" class="iconbtn tiny" data-tb="up" data-k="${k}" ${i === 0 ? "disabled" : ""} title="Move up">▲</button>
+      <button type="button" class="iconbtn tiny" data-tb="down" data-k="${k}" ${i === t.order.length - 1 ? "disabled" : ""} title="Move down">▼</button></li>`).join("")}</ol>
+    <p class="hint">An attachment only stays in a setup if it helps the goal or one of the ticked ones.</p>`;
+}
+let tbAnchor = null;
+function closeTbPop() { const p = document.querySelector(".tb-pop"); if (p) p.remove(); tbAnchor = null; }
+function openTbPop(anchor) {
+  closeTbPop();
+  const host = anchor.closest(".tiebox-host");
+  if (!host) return;
+  tbAnchor = host;
+  const p = document.createElement("div");
+  p.className = "tb-pop";
+  p.innerHTML = tiebreakListHtml();
+  document.body.appendChild(p);
+  placeTbPop();
+}
+function placeTbPop() {
+  const p = document.querySelector(".tb-pop");
+  if (!p || !tbAnchor || !document.body.contains(tbAnchor)) { closeTbPop(); return; }
+  const r = tbAnchor.getBoundingClientRect(), h = p.offsetHeight, w = p.offsetWidth;
+  p.style.left = `${Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`;
+  p.style.top = `${r.bottom + 4 + h > innerHeight - 8 ? Math.max(8, r.top - h - 4) : r.bottom + 4}px`;
+}
+function renderTieboxes() {
+  document.querySelectorAll(".tiebox-host").forEach((h) => { h.innerHTML = tiebreakHtml(h.dataset.goal); });
+  const p = document.querySelector(".tb-pop");
+  if (p) {
+    // keep the open list where it was (same host, re-rendered)
+    if (!tiebreakList()) { closeTbPop(); return; }
+    p.innerHTML = tiebreakListHtml();
+    placeTbPop();
+  }
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-tb]");
+  if (!b) { if (!e.target.closest(".tb-pop")) closeTbPop(); return; }
+  if (b.dataset.tb === "on") return;
+  if (b.dataset.tb === "open") { document.querySelector(".tb-pop") && tbAnchor === b.closest(".tiebox-host") ? closeTbPop() : openTbPop(b); return; }
+  const t = tbPrefs();
+  if (b.dataset.tb === "mode") {
+    const host = b.closest(".tiebox-host");  // (before re-rendering replaces the button)
+    t.custom = b.dataset.v === "custom";
+    prefs.tiebreak = t; savePrefs(); renderTieboxes();
+    // picking Custom opens the list straight away
+    if (t.custom && host) { const sum = host.querySelector("[data-tb='open']"); if (sum) openTbPop(sum); } else closeTbPop();
+    return;
+  }
+  const i = t.order.indexOf(b.dataset.k), j = b.dataset.tb === "up" ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= t.order.length) return;
+  [t.order[i], t.order[j]] = [t.order[j], t.order[i]];
+  prefs.tiebreak = t; savePrefs(); renderTieboxes();
+});
+document.addEventListener("change", (e) => {
+  const c = e.target.closest("[data-tb='on']");
+  if (!c) return;
+  const t = tbPrefs();
+  t.on[c.dataset.k] = c.checked;
+  prefs.tiebreak = t; savePrefs(); renderTieboxes();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.querySelector(".tb-pop")) { closeTbPop(); e.stopPropagation(); } }, true);
+window.addEventListener("resize", closeTbPop);
+document.addEventListener("scroll", (e) => { if (!(e.target.closest && e.target.closest(".tb-pop"))) placeTbPop(); }, true);
+
+/* ------------------------------------------------------------------ start-up screen */
+let bootFinished = false, bootResolve = null;
+const bootReady = new Promise((r) => { bootResolve = r; });
+function bootMsg(t) { const el = $("bootMsg"); if (el) el.textContent = t; }
+function bootDone() {
+  if (bootFinished) return;
+  bootFinished = true;
+  const b = $("boot");
+  if (b) { b.classList.add("done"); setTimeout(() => b.remove(), 800); }
+  bootResolve();
+}

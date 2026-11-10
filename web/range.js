@@ -108,7 +108,11 @@ function gunMatrices(eyeY, sp) {
 /* ------------------------------------------------------------------ frame loop */
 function frame(now) {
   requestAnimationFrame(frame);
-  try { renderFrame(now); } catch (e) {
+  try {
+    renderFrame(now);
+    // the start-up screen fades once the range has drawn the gun
+    if (!bootFinished && state.scene && R && !R.lost) bootDone();
+  } catch (e) {
     state.lastSig = null;
     // never let one bad frame freeze the range: drop the replay and report it
     console.error(e);
